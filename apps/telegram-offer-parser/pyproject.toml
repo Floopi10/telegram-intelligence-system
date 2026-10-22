@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "Telethon==1.44.0",
   "python-dotenv==1.1.1",
-  "python-socks[asyncio]==2.8.2",
+  "python-socks[asyncio]==3.1.1",
 ]
 
 [project.scripts]
