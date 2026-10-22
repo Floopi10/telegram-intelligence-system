@@ -1,0 +1,99 @@
+{
+  "positive": {
+    "5": [
+      "paid collaboration",
+      "paid collab",
+      "paid partnership",
+      "looking for kol",
+      "looking for influencers",
+      "looking for ambassadors",
+      "hiring a moderator",
+      "hiring moderators",
+      "ищем kol",
+      "ищем колов",
+      "ищем инфлюенсеров",
+      "ищем амбассадоров",
+      "ищем модератора",
+      "оплачиваемая коллаборация",
+      "платное сотрудничество"
+    ],
+    "3": [
+      "ambassador program",
+      "creator program",
+      "influencer campaign",
+      "kol campaign",
+      "community manager",
+      "content creator",
+      "bounty program",
+      "grants program",
+      "testnet rewards",
+      "амбассадорская программа",
+      "инфлюенсер",
+      "контент-мейкер",
+      "комьюнити-менеджер",
+      "контент райтер",
+      "баунти программа",
+      "грантовая программа",
+      "набираем команду",
+      "есть бюджет"
+    ],
+    "2": [
+      "hiring",
+      "vacancy",
+      "freelance",
+      "part-time",
+      "compensation",
+      "paid in",
+      "monthly payouts",
+      "reward pool",
+      "deliverables",
+      "budget",
+      "apply here",
+      "send portfolio",
+      "dm me",
+      "open position",
+      "вакансия",
+      "оплата",
+      "бюджет",
+      "гонорар",
+      "отправляйте портфолио",
+      "пишите в лс",
+      "удаленная работа",
+      "частичная занятость"
+    ],
+    "1": [
+      "web3",
+      "crypto",
+      "blockchain",
+      "telegram",
+      "discord",
+      "twitter",
+      "x.com",
+      "remote",
+      "дедлайн"
+    ]
+  },
+  "negative": {
+    "-6": [
+      "не ищем",
+      "позиция закрыта",
+      "набор закрыт",
+      "applications closed",
+      "position filled",
+      "hiring closed",
+      "real human organic followers",
+      "we grow boost"
+    ],
+    "-3": [
+      "без оплаты",
+      "неоплачиваемая",
+      "unpaid",
+      "volunteer only",
+      "for exposure",
+      "i'm a youtuber",
+      "i’m a youtuber",
+      "i am a youtuber",
+      "бесплатный инструмент"
+    ]
+  }
+}

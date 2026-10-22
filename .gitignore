@@ -1,0 +1,42 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+*.key
+*.pem
+cookies*.json
+storage-state*.json
+
+# Runtime data and personal exports
+data/
+exports/
+backups/
+logs/
+vault/
+chrome-profile/
+*.db
+*.db-*
+*.sqlite*
+*.jsonl
+*.xlsx
+*.csv
+
+# Python and tooling
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

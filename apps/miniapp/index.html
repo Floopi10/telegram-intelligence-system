@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Telegram Intelligence</title>
+  <style>
+    :root{color-scheme:dark;font:15px/1.5 Inter,system-ui,sans-serif;background:#090d14;color:#eef2ff}
+    body{max-width:1100px;margin:auto;padding:32px 18px}h1{font-size:clamp(28px,5vw,56px);margin:.2em 0}
+    .muted{color:#94a3b8}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:24px 0}
+    .card,.item{background:#111827;border:1px solid #243047;border-radius:16px;padding:18px}.value{font-size:32px;font-weight:800}
+    .list{display:grid;gap:10px}.item h3{margin:0 0 6px;font-size:16px}.item p{margin:0;color:#cbd5e1;white-space:pre-wrap}
+    a{color:#67e8f9}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#1e293b;color:#a5f3fc;margin-right:8px}
+  </style>
+</head>
+<body>
+  <p class="muted">OPEN-SOURCE INTELLIGENCE PIPELINE</p><h1>Telegram Intelligence</h1>
+  <p class="muted">Вакансии, знания и X-находки в одном read-only интерфейсе.</p>
+  <section id="metrics" class="metrics"></section><section id="items" class="list"></section>
+  <script>
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    Promise.all([fetch('/api/metrics').then(r=>r.json()),fetch('/api/recent?limit=50').then(r=>r.json())]).then(([m,items])=>{
+      const cards=(m.items||[]).map(x=>`<div class="card"><div class="value">${x.count}</div><div class="muted">${esc(x.item_kind)}</div></div>`);
+      cards.push(`<div class="card"><div class="value">${m.twitter?.accepted||0}</div><div class="muted">сильных X-находок</div></div>`);
+      document.querySelector('#metrics').innerHTML=cards.join('');
+      document.querySelector('#items').innerHTML=items.map(x=>`<article class="item"><h3><span class="badge">${esc(x.item_kind)}</span>${esc(x.chat_title)} · ${esc(x.score)}</h3><p>${esc(x.text)}</p>${x.source_url?`<p><a href="${esc(x.source_url)}" target="_blank" rel="noreferrer">Источник</a></p>`:''}</article>`).join('');
+    }).catch(()=>document.querySelector('#items').textContent='Не удалось загрузить данные');
+  </script>
+</body></html>
+

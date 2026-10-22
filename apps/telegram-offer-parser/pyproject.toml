@@ -1,0 +1,16 @@
+[project]
+name = "telegram-offer-parser"
+version = "0.1.0"
+description = "Personal Telegram offer monitor for chats available to the authorized user account"
+requires-python = ">=3.11"
+dependencies = [
+  "Telethon==1.44.0",
+  "python-dotenv==1.1.1",
+  "python-socks[asyncio]==2.8.2",
+]
+
+[project.scripts]
+offer-parser = "offer_parser.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["offer_parser*"]

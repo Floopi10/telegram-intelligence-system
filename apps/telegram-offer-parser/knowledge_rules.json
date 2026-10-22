@@ -1,0 +1,69 @@
+{
+  "positive": {
+    "6": [
+      "разбор поста", "разбор треда", "разбор видео",
+      "оценка поста", "оценка видео", "оценка контента",
+      "post breakdown", "thread breakdown", "video breakdown",
+      "case study", "growth case", "twitter algorithm", "x algorithm",
+      "алгоритм twitter", "алгоритм твиттера",
+      "business development manager", "head of business development",
+      "partnerships manager", "partnership manager", "outreach manager",
+      "kol manager", "influencer manager", "affiliate manager",
+      "ambassador manager", "community manager", "community lead",
+      "marketing manager", "growth manager",
+      "менеджер по развитию бизнеса", "менеджер по партнёрствам",
+      "менеджер по партнерствам", "менеджер по работе с kol",
+      "менеджер по инфлюенсерам", "комьюнити-менеджер",
+      "маркетинг-менеджер"
+    ],
+    "4": [
+      "content strategy", "контент стратегия", "контент-стратегия",
+      "engagement rate", "audience growth", "рост аудитории",
+      "content analysis", "анализ контента", "post analysis", "анализ поста",
+      "video analysis", "анализ видео", "retention", "удержание аудитории",
+      "shadowban", "теневой бан", "security incident", "scam investigation",
+      "разбор скама", "мошенническая схема", "phishing", "фишинг",
+      "rug pull", "drainer"
+    ],
+    "3": [
+      "impressions", "охваты", "показы", "конверсия", "conversion rate",
+      "analytics", "аналитика", "hook", "hooks", "хук", "viral",
+      "виральность", "content format", "формат контента",
+      "thread structure", "структура треда", "community growth", "creator growth",
+      "business development", "bd manager", "bd lead", "bd",
+      "partnerships", "partnership lead", "outreach", "affiliate manager",
+      "kol manager", "influencer manager", "ambassador manager",
+      "community manager", "community lead", "moderator",
+      "marketing manager", "growth marketer", "growth manager",
+      "бизнес-девелопмент", "бизнес девелопмент", "бд менеджер",
+      "бд менеджера", "менеджера по развитию бизнеса",
+      "партнёрства", "партнерства", "аутрич", "менеджер kol",
+      "менеджера по партнёрствам", "менеджера по партнерствам",
+      "менеджер по инфлюенсерам", "амбассадор-менеджер",
+      "комьюнити-менеджер", "комьюнити-менеджера",
+      "комьюнити менеджер", "комьюнити менеджера",
+      "модератор", "модератора",
+      "маркетолог", "маркетолога"
+    ],
+    "1": [
+      "twitter", "x.com", "tweet", "твиттер", "твит", "thread", "тред",
+      "kol", "creator", "инфлюенсер", "контент",
+      "hiring", "vacancy", "vacancies", "job opening", "open position",
+      "position", "job", "we are hiring", "looking for",
+      "вакансия", "вакансии", "работа", "ищем",
+      "ищем сотрудника", "ищем специалиста", "открыта позиция"
+    ]
+  },
+  "negative": {
+    "-8": [
+      "looking for kol", "looking for kols", "looking for influencers",
+      "paid collaboration", "paid partnership", "fill this form",
+      "ищем kol", "ищем колов", "ищем инфлюенсеров",
+      "пишите в лс", "заполните форму"
+    ],
+    "-4": [
+      "dm me", "ambassador program", "referral link",
+      "реферальная ссылка", "промокод"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /apps/telegram-offer-parser
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /apps/obsidian-bot
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /services/x-collector
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+

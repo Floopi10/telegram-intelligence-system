@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "chat_id": -1000000000001,
+      "title": "Primary X research chat",
+      "tier": "P0",
+      "min_score": 2
+    },
+    {
+      "chat_id": -1000000000002,
+      "title": "Secondary X research chat 1",
+      "tier": "P1",
+      "min_score": 3
+    },
+    {
+      "chat_id": -1000000000003,
+      "title": "Secondary X research chat 2",
+      "tier": "P1",
+      "min_score": 3
+    },
+    {
+      "chat_id": -1000000000004,
+      "title": "Secondary X research chat 3",
+      "tier": "P1",
+      "min_score": 3
+    },
+    {
+      "chat_id": -1000000000005,
+      "title": "Secondary X research chat 4",
+      "tier": "P1",
+      "min_score": 3
+    }
+  ]
+}
+
