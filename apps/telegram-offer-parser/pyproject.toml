@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Personal Telegram offer monitor for chats available to the authorized user account"
 requires-python = ">=3.11"
 dependencies = [
-  "Telethon==1.44.0",
+  "Telethon==1.45.0",
   "python-dotenv==1.1.1",
   "python-socks[asyncio]==2.8.2",
 ]
