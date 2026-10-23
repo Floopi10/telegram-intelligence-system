@@ -34,6 +34,21 @@ class VacancyFilterTest(unittest.TestCase):
             with self.subTest(region=region):
                 self.assertRejected(f"Paid remote {region} Outreach Specialist, $2000.", "blocked_region")
 
+    def test_rejects_morocco_and_southeast_asia_focus(self):
+        self.assertRejected(
+            "Remote Senior Growth Manager France to Morocco, salary $70000.",
+            "blocked_region",
+        )
+        self.assertRejected(
+            "Remote Junior Business Development, Southeast Asia focus, 900 USDT/month.",
+            "blocked_region",
+        )
+
+    def test_global_remote_overrides_named_region(self):
+        self.assertAccepted(
+            "Hiring Business Development Manager, US / Remote Global, salary $120000."
+        )
+
     def test_rejects_media_manager(self):
         self.assertRejected("Paid global remote Media Manager, salary $2000.", "excluded_role")
 

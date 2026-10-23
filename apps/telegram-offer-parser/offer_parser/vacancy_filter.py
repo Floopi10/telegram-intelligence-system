@@ -80,6 +80,9 @@ BLOCKED_REGION_PATTERNS = (
     r"\bdominican republic\b", r"\bcuba\b", r"\bghana\b", r"\bafrica\b",
     r"\bdubai\b", r"\buae\b", r"\buk\b", r"\bunited kingdom\b",
     r"\beurope[- ]only\b", r"\beu[- ]only\b", r"\bcanada\b", r"\bapac\b", r"\bindia\b",
+    r"\bfrance\b", r"\bmorocco\b", r"\bsoutheast asia\b", r"\bsouth[- ]east asia\b",
+    r"\bsea\s+focus\b", r"\bindonesia\b", r"\bmalaysia\b", r"\bphilippines\b",
+    r"\bthailand\b", r"\bvietnam\b", r"\bsingapore\b",
 )
 
 

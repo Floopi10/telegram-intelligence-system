@@ -19,11 +19,13 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "AI": (
         r"\bai\b", r"artificial intelligence", r"\bllm\b", r"claude",
         r"chatgpt", r"openai", r"gemini", r"deepseek", r"qwen",
-        r"neural", r"machine learning", r"prompt", r"нейросет", r"\bии\b",
+        r"grok", r"opus", r"neural", r"machine learning", r"prompt",
+        r"\bagents?\b", r"\bai model", r"model routing", r"нейросет", r"\bии\b",
     ),
     "Финансы": (
-        r"financ", r"market", r"trading", r"invest", r"stock", r"equity",
-        r"credit", r"bank", r"fund", r"macro", r"portfolio", r"econom",
+        r"financ", r"financial market", r"trading", r"trader", r"invest",
+        r"stock", r"equity", r"credit suisse", r"banking", r"hedge fund",
+        r"macro", r"portfolio", r"econom", r"polymarket", r"profit",
         r"финанс", r"рынок", r"трейд", r"инвест", r"банк", r"эконом",
     ),
     "Роботы": (
@@ -32,7 +34,7 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "Девушки и lifestyle": (
         r"\bgirl", r"\bwomen?\b", r"female", r"beauty", r"fashion",
-        r"makeup", r"skincare", r"outfit", r"model", r"lifestyle",
+        r"makeup", r"skincare", r"outfit", r"fashion model", r"lifestyle",
         r"девуш", r"женщин", r"мода", r"красот", r"макияж", r"уход",
     ),
     "Web3": (
@@ -42,12 +44,14 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "Технологии": (
         r"software", r"developer", r"coding", r"github", r"open.source",
-        r"startup", r"saas", r"\bapi\b", r"app", r"hardware", r"tech",
+        r"startup", r"saas", r"\bapi\b", r"hardware", r"tech", r"zero.day",
+        r"vulnerabil", r"remote code execution", r"windows process", r"railway",
+        r"infrastructure", r"terminal", r"sandbox", r"registry cred",
         r"разработ", r"код", r"приложен", r"стартап", r"технолог",
     ),
     "Маркетинг и контент": (
         r"marketing", r"creator", r"content", r"viral", r"hook", r"growth",
-        r"audience", r"brand", r"conversion", r"retention", r"twitter",
+        r"audience", r"brand", r"conversion", r"retention", r"storytelling",
         r"маркетинг", r"контент", r"вирал", r"хук", r"аудитори", r"бренд",
     ),
     "Игры": (
@@ -97,4 +101,4 @@ def classify_twitter_niche(*values: str) -> str | None:
         for niche, patterns in NICHE_PATTERNS.items()
     }
     best = max(NICHE_ORDER, key=lambda niche: scores[niche])
-    return best if scores[best] else "Маркетинг и контент"
+    return best if scores[best] else None

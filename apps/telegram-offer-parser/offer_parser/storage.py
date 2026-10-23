@@ -354,6 +354,8 @@ class Storage:
                    ts.views, ts.likes, ts.reposts, ts.replies, ts.bookmarks,
                    ts.views_per_hour, ts.signal_rate,
                    ts.velocity_percentile, ts.signal_percentile,
+                   ts.decision AS strength_decision,
+                   ts.strength_kind, ts.age_hours,
                    ti.analysis_json, ti.chat_title, ti.created_at
             FROM twitter_intelligence AS ti
             LEFT JOIN twitter_strength_candidates AS ts

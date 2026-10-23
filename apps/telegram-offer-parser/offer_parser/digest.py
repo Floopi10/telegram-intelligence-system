@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,22 @@ MSK = ZoneInfo("Europe/Moscow")
 def _short(value: str, limit: int = 240) -> str:
     clean = " ".join(value.split())
     return clean if len(clean) <= limit else clean[: limit - 1] + "…"
+
+
+def _clean_hook(value: str) -> str:
+    clean = " ".join(str(value or "").split())
+    replacements = (
+        (r"контрарн(?:ый|ое)statement", "контрарное утверждение"),
+        (r"\bseguido\b", "после чего"),
+    )
+    for pattern, replacement in replacements:
+        clean = re.sub(pattern, replacement, clean, flags=re.I)
+    clean = re.sub(
+        r"(?<=[А-Яа-яЁё])(?=[A-Za-z])|(?<=[A-Za-z])(?=[А-Яа-яЁё])",
+        " ",
+        clean,
+    )
+    return clean
 
 
 NICHE_LIMITS = {
@@ -38,13 +55,58 @@ def _candidate_rank(item: dict) -> float:
     velocity = float(item.get("velocity_percentile") or 0)
     signal = float(item.get("signal_percentile") or 0)
     signal_rate = float(item.get("signal_rate") or 0)
+    tier_bonus = 100 if item.get("quality_tier") == "winner" else 0
     return (
-        float(item.get("content_score") or 0) * 10
-        + math.log10(max(views, 1)) * 2
-        + velocity * 8
-        + signal * 8
-        + min(signal_rate * 100, 5)
+        tier_bonus
+        + math.log10(max(views, 1)) * 15
+        + velocity * 30
+        + signal * 25
+        + min(signal_rate * 100, 10)
+        + float(item.get("content_score") or 0) * 2
     )
+
+
+def _quality_tier(item: dict) -> str | None:
+    """Metric-first gate. LLM score alone never makes a radar item strong."""
+    views = item.get("views")
+    if views is None:
+        return None
+    views = int(views)
+    likes = int(item.get("likes") or 0)
+    reposts = int(item.get("reposts") or 0)
+    bookmarks = int(item.get("bookmarks") or 0)
+    velocity = float(item.get("velocity_percentile") or 0)
+    signal = float(item.get("signal_percentile") or 0)
+    views_per_hour = float(item.get("views_per_hour") or 0)
+    signal_rate = float(item.get("signal_rate") or 0)
+    content_score = int(item.get("content_score") or 0)
+    decision = str(item.get("strength_decision") or "")
+    kind = str(item.get("strength_kind") or "")
+
+    absolute_winner = (
+        views >= 10_000 or likes >= 200 or reposts >= 50 or bookmarks >= 50
+    )
+    relative_winner = (
+        views >= 100
+        and decision == "keep"
+        and kind != "полезная механика"
+        and (velocity >= 0.80 or signal >= 0.80)
+    )
+    if absolute_winner or relative_winner:
+        return "winner"
+
+    promising_mechanic = (
+        views >= 250
+        and content_score >= 8
+        and (
+            decision == "keep"
+            or velocity >= 0.75
+            or signal >= 0.75
+            or views_per_hour >= 100
+            or signal_rate >= 0.02
+        )
+    )
+    return "mechanic" if promising_mechanic else None
 
 
 def select_twitter_radar(candidates: list[dict], limit: int = 50) -> list[dict]:
@@ -66,18 +128,20 @@ def select_twitter_radar(candidates: list[dict], limit: int = 50) -> list[dict]:
             " ".join(str(value) for value in analysis.get("risk_flags", []) or []),
         ):
             continue
-        niche = str(analysis.get("niche") or "").strip()
-        if not niche or niche not in NICHE_ORDER:
-            niche = classify_twitter_niche(
-                str(analysis.get("topic") or ""),
-                str(analysis.get("hook") or ""),
-                str(analysis.get("analysis_ru") or ""),
-            ) or ""
+        niche = classify_twitter_niche(
+            str(analysis.get("topic") or ""),
+            str(analysis.get("hook") or ""),
+            str(analysis.get("analysis_ru") or ""),
+        ) or ""
         if niche not in NICHE_ORDER:
             continue
         enriched = dict(item)
+        quality_tier = _quality_tier(enriched)
+        if quality_tier is None:
+            continue
         enriched["analysis"] = analysis
         enriched["niche"] = niche
+        enriched["quality_tier"] = quality_tier
         enriched["rank"] = _candidate_rank(enriched)
         unique[url] = enriched
 
@@ -92,14 +156,6 @@ def select_twitter_radar(candidates: list[dict], limit: int = 50) -> list[dict]:
         counts[niche] += 1
         if len(selected) >= limit:
             break
-    if len(selected) < limit:
-        selected_urls = {item["canonical_url"] for item in selected}
-        for item in ranked:
-            if item["canonical_url"] in selected_urls:
-                continue
-            selected.append(item)
-            if len(selected) >= limit:
-                break
     return selected
 
 
@@ -113,7 +169,12 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
         return []
 
     parts: list[str] = []
-    current = f"🐦 TWITTER RADAR · {now_msk:%d.%m.%Y}\nНайдено: {len(selected)}"
+    winners = sum(item["quality_tier"] == "winner" for item in selected)
+    mechanics = len(selected) - winners
+    current = (
+        f"🐦 TWITTER RADAR · {now_msk:%d.%m.%Y}\n"
+        f"Залетевшие: {winners} · Перспективные механики: {mechanics}"
+    )
     for niche in NICHE_ORDER:
         items = [item for item in selected if item["niche"] == niche]
         if not items:
@@ -121,11 +182,12 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
         block_lines = [f"\n{niche}"]
         for item in items:
             analysis = item["analysis"]
-            hook = _short(str(analysis.get("hook") or analysis.get("topic") or "X-пост"), 130)
+            hook = _short(_clean_hook(str(analysis.get("hook") or analysis.get("topic") or "X-пост")), 130)
             views = int(item.get("views") or 0)
             metrics = f" · {views:,} views".replace(",", " ") if views else ""
+            label = "ЗАЛЕТЕЛ" if item["quality_tier"] == "winner" else "МЕХАНИКА"
             block_lines.extend([
-                f"• [{item['content_score']}/10]{metrics} {hook}",
+                f"• [{label} · {item['content_score']}/10]{metrics} {hook}",
                 str(item["canonical_url"]),
             ])
         block = "\n".join(block_lines)
@@ -147,7 +209,10 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
 
     lines = [f"📊 ДАЙДЖЕСТ · {now_msk:%d.%m.%Y}", ""]
     vacancies = data["vacancies"][:5]
-    twitter = select_twitter_radar(data.get("twitter_candidates", []), 5)
+    twitter = [
+        item for item in select_twitter_radar(data.get("twitter_candidates", []), 50)
+        if item["quality_tier"] == "winner"
+    ][:5]
     knowledge = data["knowledge"][:5]
 
     lines.append("💼 Вакансии")
@@ -163,7 +228,7 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
     if twitter:
         for item in twitter:
             analysis = item["analysis"]
-            hook = analysis.get("hook") or analysis.get("topic") or "X-пост"
+            hook = _clean_hook(str(analysis.get("hook") or analysis.get("topic") or "X-пост"))
             lines.append(f"• [{item['content_score']}/10] {_short(str(hook), 180)}")
             lines.append(item["canonical_url"])
     else:

@@ -44,6 +44,15 @@ offer-parser --help
 Fill `.env` locally. Never commit it. Component-specific instructions are kept in
 each component directory.
 
+## Quality-first digest
+
+Twitter Radar does not fill a fixed quota. It separates metric-confirmed winners
+from promising mechanics, requires visible X metrics, ranks by velocity and
+engagement before LLM score, and drops low-view posts that only received a high
+text-analysis score. Vacancy and knowledge sections also re-check geography,
+role relevance, campaign spam, greetings and conversational fragments before the
+daily digest is rendered.
+
 ## License
 
 AGPL-3.0. Network-hosted modified versions must make their corresponding source

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from offer_parser.dedupe import build_signature, similarity
 from offer_parser.digest import build_daily_digest
@@ -45,7 +46,42 @@ class DigestDedupeTest(unittest.TestCase):
             storage.save_twitter_analysis(
                 canonical_url="https://x.com/a/status/2", chat_id=-1, message_id=3,
                 chat_title="X FAMILY", decision="keep", ai_score=9, topic="growth",
-                risk_flags=(), analysis={"hook": "Strong contrast hook"},
+                risk_flags=(), analysis={
+                    "topic": "viral content marketing",
+                    "hook": "Strong contrast hook for audience growth",
+                },
+            )
+            now = datetime.now(timezone.utc)
+            storage.save_twitter_strength(
+                canonical_url="https://x.com/a/status/2",
+                author="a",
+                chat_id=-1,
+                message_id=3,
+                chat_title="X FAMILY",
+                content_score=9,
+                metrics=SimpleNamespace(
+                    published_at=now,
+                    collected_at=now,
+                    age_bucket="under_6h",
+                    age_hours=1.0,
+                    views=100_000,
+                    likes=1000,
+                    reposts=200,
+                    replies=50,
+                    bookmarks=100,
+                    views_per_hour=100_000.0,
+                    signal_rate=0.03,
+                ),
+                strength=SimpleNamespace(
+                    kind="подтверждённый победитель",
+                    reason_ru="absolute viral",
+                    baseline_scope="cohort",
+                    baseline_size=20,
+                    velocity_percentile=0.99,
+                    signal_percentile=0.95,
+                ),
+                decision="keep",
+                analysis={"hook": "Strong contrast hook for audience growth"},
             )
             message = build_daily_digest(storage)
             self.assertIn("💼 Вакансии", message)

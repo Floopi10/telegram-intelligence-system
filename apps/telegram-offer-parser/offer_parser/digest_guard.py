@@ -18,10 +18,31 @@ CONTEXT_FRAGMENT = re.compile(
     re.I,
 )
 
+CAMPAIGN_SPAM = re.compile(
+    r"\bcommunity\s+(?:growth\s+)?campaign\b|\btotal\s+rewards?\s*:|"
+    r"\bwinners?\s+announced\b|\bcomplete\s+(?:verified\s+)?(?:campaigns?|quests?)\b",
+    re.I,
+)
+
+WELCOME_NOISE = re.compile(
+    r"^\s*(?:🎉\s*)?welcome\s+@?[\w.]+\s+to\s+.+(?:hub|community|group)\b",
+    re.I,
+)
+
+PERSONAL_BANTER = re.compile(
+    r"\bбро[,! ]+ты\b.*\b(?:нахуй|ебанул\w*|кризис)\b|"
+    r"\bsorry\s+(?:maam|bro|man)\b.*\b(?:team|kol|offer)\b",
+    re.I | re.S,
+)
+
 
 def is_knowledge_noise(text: str) -> bool:
     normalized = " ".join((text or "").split())
     if AMBASSADOR_SPAM.search(normalized):
+        return True
+    if CAMPAIGN_SPAM.search(normalized) or WELCOME_NOISE.search(normalized):
+        return True
+    if PERSONAL_BANTER.search(normalized):
         return True
     if len(normalized) < 260 and CONTEXT_FRAGMENT.search(normalized):
         return True
