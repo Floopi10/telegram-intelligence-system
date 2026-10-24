@@ -53,6 +53,12 @@ text-analysis score. Vacancy and knowledge sections also re-check geography,
 role relevance, campaign spam, greetings and conversational fragments before the
 daily digest is rendered.
 
+When a Telegram message explicitly reports an outcome next to an X link, the
+radar also extracts follower gain, the result window, views-to-followers
+conversion, revenue and content format. These claims remain labelled as
+self-reported: they improve ordering and explainability, but cannot make a post a
+winner without metrics collected directly from X.
+
 ## License
 
 AGPL-3.0. Network-hosted modified versions must make their corresponding source

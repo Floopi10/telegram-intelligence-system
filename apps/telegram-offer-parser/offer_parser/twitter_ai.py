@@ -97,8 +97,8 @@ class TwitterAIClient:
         self.min_score = min_score
         self.timeout = timeout
 
-    async def analyze(self, preview: XPreview) -> TwitterAnalysis:
-        raw = await asyncio.to_thread(self._request, preview)
+    async def analyze(self, preview: XPreview, source_context: str = "") -> TwitterAnalysis:
+        raw = await asyncio.to_thread(self._request, preview, source_context)
         score = max(0, min(10, int(raw.get("score", 0))))
         flags = tuple(dict.fromkeys(
             str(flag).strip().casefold()
@@ -132,7 +132,7 @@ class TwitterAIClient:
             reason_ru=str(raw.get("reason_ru", "")).strip()[:1000],
         )
 
-    def _request(self, preview: XPreview) -> dict:
+    def _request(self, preview: XPreview, source_context: str = "") -> dict:
         payload = json.dumps(
             {
                 "model": self.model,
@@ -142,6 +142,7 @@ class TwitterAIClient:
                         "url": preview.canonical_url,
                         "title": preview.title,
                         "text": preview.description,
+                        "telegram_context": source_context[:4000],
                     }, ensure_ascii=False)},
                 ],
                 "temperature": 0.1,

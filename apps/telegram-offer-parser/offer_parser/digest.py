@@ -13,6 +13,7 @@ from .twitter_niches import (
     classify_twitter_niche,
     is_twitter_radar_noise,
 )
+from .twitter_evidence import compact_evidence, evidence_rank_bonus
 
 MSK = ZoneInfo("Europe/Moscow")
 
@@ -56,6 +57,8 @@ def _candidate_rank(item: dict) -> float:
     signal = float(item.get("signal_percentile") or 0)
     signal_rate = float(item.get("signal_rate") or 0)
     tier_bonus = 100 if item.get("quality_tier") == "winner" else 0
+    analysis = item.get("analysis") or {}
+    evidence_bonus = evidence_rank_bonus(analysis.get("telegram_evidence"))
     return (
         tier_bonus
         + math.log10(max(views, 1)) * 15
@@ -63,6 +66,7 @@ def _candidate_rank(item: dict) -> float:
         + signal * 25
         + min(signal_rate * 100, 10)
         + float(item.get("content_score") or 0) * 2
+        + evidence_bonus
     )
 
 
@@ -185,9 +189,11 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
             hook = _short(_clean_hook(str(analysis.get("hook") or analysis.get("topic") or "X-пост")), 130)
             views = int(item.get("views") or 0)
             metrics = f" · {views:,} views".replace(",", " ") if views else ""
+            evidence = compact_evidence(analysis.get("telegram_evidence"))
+            evidence_suffix = f" · {evidence}" if evidence else ""
             label = "ЗАЛЕТЕЛ" if item["quality_tier"] == "winner" else "МЕХАНИКА"
             block_lines.extend([
-                f"• [{label} · {item['content_score']}/10]{metrics} {hook}",
+                f"• [{label} · {item['content_score']}/10]{metrics}{evidence_suffix} {hook}",
                 str(item["canonical_url"]),
             ])
         block = "\n".join(block_lines)
@@ -229,7 +235,9 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
         for item in twitter:
             analysis = item["analysis"]
             hook = _clean_hook(str(analysis.get("hook") or analysis.get("topic") or "X-пост"))
-            lines.append(f"• [{item['content_score']}/10] {_short(str(hook), 180)}")
+            evidence = compact_evidence(analysis.get("telegram_evidence"))
+            evidence_prefix = f"{evidence} · " if evidence else ""
+            lines.append(f"• [{item['content_score']}/10] {_short(evidence_prefix + str(hook), 180)}")
             lines.append(item["canonical_url"])
     else:
         lines.append("• Сильных находок сегодня нет")
