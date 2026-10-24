@@ -17,7 +17,7 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bai\b", r"artificial intelligence", r"\bllm\b", r"\bagents?\b",
         r"claude", r"chatgpt", r"openai", r"gemini", r"deepseek", r"qwen",
         r"machine learning", r"neural", r"нейросет", r"искусственн\w+ интеллект",
-        r"промпт", r"\bии\b",
+        r"промпт", r"\bии\b", r"\bагент(?:а|ы|ов|ом|ами|ский|ские|ских)?\b",
     ),
     "Роботы": (
         r"robot", r"robotics", r"humanoid", r"embodied", r"autonomous",
@@ -32,7 +32,8 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "Web3": (
         r"web3", r"crypto", r"blockchain", r"onchain", r"on-chain", r"token",
         r"protocol", r"airdrop", r"\bdefi\b", r"wallet", r"\bnft\b", r"\bl[12]\b",
-        r"крипт", r"блокчейн", r"ончейн", r"токен", r"протокол", r"аирдроп",
+        r"solana", r"\bsol\b", r"крипт", r"блокчейн", r"ончейн", r"токен",
+        r"протокол", r"аирдроп",
     ),
     "BD": (
         r"business development", r"\bbd\b", r"bizdev", r"partnership",
@@ -131,6 +132,11 @@ def _word_count(text: str) -> int:
     return len(re.findall(r"[\w$%]+", text, re.UNICODE))
 
 
+def _content_without_links(text: str) -> str:
+    """Strip URLs before judging whether a message contains useful context."""
+    return " ".join(re.sub(r"https?://\S+", " ", text, flags=re.IGNORECASE).split())
+
+
 def evaluate_knowledge_balance(
     *,
     text: str,
@@ -144,9 +150,10 @@ def evaluate_knowledge_balance(
     niches = classify_niches(text)
     primary = _primary(niches)
     title = _normalized(chat_title)
-    word_count = _word_count(text)
+    context = _content_without_links(normalized)
+    word_count = _word_count(context)
 
-    if len(normalized) < 45 or word_count < 7:
+    if len(context) < 45 or word_count < 7:
         return KnowledgeBalanceDecision(False, primary, niches, "too_short")
     if _matches_any(normalized, ENGAGEMENT_NOISE):
         return KnowledgeBalanceDecision(False, primary, niches, "engagement_noise")
@@ -162,14 +169,14 @@ def evaluate_knowledge_balance(
 
     if is_alpha:
         relevant = matcher_score >= 1 or alpha_signal or insight
-        enough_context = len(normalized) >= 55 and word_count >= 8
+        enough_context = len(context) >= 55 and word_count >= 8
     elif is_priority_x:
         relevant = matcher_score >= 2 or insight
-        enough_context = len(normalized) >= 80 and word_count >= 12
+        enough_context = len(context) >= 80 and word_count >= 12
     else:
         strong_niche = primary in {"Роботы", "BD", "AI", "Финансы", "Безопасность", "Инструменты"}
         relevant = matcher_score >= 3 or (strong_niche and matcher_score >= 2)
-        enough_context = len(normalized) >= (120 if matcher_score >= 3 else 180) and word_count >= 15
+        enough_context = len(context) >= (120 if matcher_score >= 3 else 180) and word_count >= 15
 
     if not relevant:
         return KnowledgeBalanceDecision(False, primary, niches, "weak_relevance")
