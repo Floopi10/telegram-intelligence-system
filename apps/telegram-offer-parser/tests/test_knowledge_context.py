@@ -20,7 +20,7 @@ class KnowledgeContextTests(unittest.TestCase):
         self.assertFalse(decision.accepted)
         self.assertEqual(decision.reason, "too_short")
         self.assertIn("AI", decision.niches)
-        self.assertIn("Web3", decision.niches)
+        self.assertNotIn("Web3", decision.niches)
         self.assertIn("Финансы", decision.niches)
 
 
