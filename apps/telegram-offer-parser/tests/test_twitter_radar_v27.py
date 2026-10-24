@@ -4,7 +4,10 @@ import json
 import unittest
 
 from offer_parser.digest import _clean_hook, select_twitter_radar
-from offer_parser.twitter_niches import classify_twitter_niche
+from offer_parser.twitter_niches import (
+    REFERENCE_ACCOUNT_NICHES,
+    classify_twitter_niche,
+)
 
 
 class TwitterRadarTests(unittest.TestCase):
@@ -37,6 +40,30 @@ class TwitterRadarTests(unittest.TestCase):
 
     def test_unknown_topic_is_not_forced_into_marketing(self):
         self.assertIsNone(classify_twitter_niche("unexpected physical comedy moment"))
+
+    def test_reference_accounts_override_ambiguous_short_text(self):
+        examples = {
+            "https://x.com/kirillk_web3": "AI",
+            "https://x.com/0xLeeem": "Финансы",
+            "https://x.com/framexin": "Девушки и lifestyle",
+            "https://x.com/Shred_0x": "Роботы",
+            "https://x.com/HodlReaper": "Claude + Obsidian",
+            "https://x.com/brainrulax": "Mac mini",
+            "https://x.com/0xDominiqq": "Математика",
+        }
+        for url, expected in examples.items():
+            with self.subTest(url=url):
+                self.assertEqual(classify_twitter_niche(url, "example post"), expected)
+        self.assertEqual(len(REFERENCE_ACCOUNT_NICHES), 36)
+
+    def test_specific_niches_win_over_broad_keywords(self):
+        self.assertEqual(
+            classify_twitter_niche("Claude workflow connected to an Obsidian knowledge vault"),
+            "Claude + Obsidian",
+        )
+        self.assertEqual(classify_twitter_niche("Mac mini M4 local server"), "Mac mini")
+        self.assertEqual(classify_twitter_niche("geometry theorem proof"), "Математика")
+        self.assertEqual(classify_twitter_niche("OnlyFans creator model"), "Девушки и lifestyle")
 
     def test_broken_mixed_language_hook_is_cleaned(self):
         value = _clean_hook(

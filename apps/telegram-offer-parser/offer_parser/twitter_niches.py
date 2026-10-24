@@ -5,6 +5,9 @@ from collections.abc import Iterable
 
 
 NICHE_ORDER = (
+    "Claude + Obsidian",
+    "Mac mini",
+    "Математика",
     "AI",
     "Финансы",
     "Роботы",
@@ -14,6 +17,34 @@ NICHE_ORDER = (
     "Маркетинг и контент",
     "Игры",
 )
+
+# Accounts supplied by the owner as canonical examples for each X niche.
+# An exact account match has priority over keyword scoring because short
+# Telegram forwards often contain only a profile URL and a few words.
+REFERENCE_ACCOUNT_NICHES: dict[str, str] = {
+    **{handle: "AI" for handle in (
+        "kirillk_web3", "oluwaphilemon1", "solvaix", "mikenevermiss",
+        "abyssalld", "0xinfer", "0xzynex", "caesar_aii", "vepsi__",
+    )},
+    **{handle: "Финансы" for handle in (
+        "0xleeem", "0xcodez", "beamnxw", "0xcodila", "mahaximus_",
+    )},
+    **{handle: "Девушки и lifestyle" for handle in (
+        "framexin", "crimson_moti", "psych0psina", "0x_anni", "kevin_vibex",
+    )},
+    **{handle: "Роботы" for handle in (
+        "0xforge", "shred_0x", "yurash1104", "timdaugs", "fuzzyxbt",
+    )},
+    **{handle: "Claude + Obsidian" for handle in (
+        "hodlreaper", "0xkkai", "z0rynx",
+    )},
+    **{handle: "Mac mini" for handle in (
+        "brainrulax", "0xframez", "0xgrimmer_", "retrochainer",
+    )},
+    **{handle: "Математика" for handle in (
+        "0xdominiqq", "isssa0x", "ryomenex", "flandermaxx", "thelichhh",
+    )},
+}
 
 NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "AI": (
@@ -35,7 +66,19 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "Девушки и lifestyle": (
         r"\bgirl", r"\bwomen?\b", r"female", r"beauty", r"fashion",
         r"makeup", r"skincare", r"outfit", r"fashion model", r"lifestyle",
-        r"девуш", r"женщин", r"мода", r"красот", r"макияж", r"уход",
+        r"onlyfans", r"\bof model", r"девуш", r"женщин", r"мода", r"красот",
+        r"макияж", r"уход",
+    ),
+    "Claude + Obsidian": (
+        r"claude.{0,40}obsidian", r"obsidian.{0,40}claude",
+        r"second brain", r"knowledge vault", r"база знаний",
+    ),
+    "Mac mini": (
+        r"mac mini", r"macmini", r"apple silicon", r"\bm[1-9]\s*(?:pro|max|ultra)?\b",
+    ),
+    "Математика": (
+        r"mathemat", r"algebra", r"geometry", r"calculus", r"theorem",
+        r"equation", r"математ", r"алгебр", r"геометри", r"теорем", r"уравнен",
     ),
     "Web3": (
         r"web3", r"crypto", r"blockchain", r"onchain", r"token", r"defi",
@@ -92,10 +135,28 @@ def is_twitter_radar_noise(*values: str) -> bool:
     )
 
 
+def reference_account_niche(*values: str) -> str | None:
+    """Return the configured niche for an exact X/Twitter account URL."""
+    text = " ".join(str(value or "") for value in values)
+    handles = re.findall(
+        r"(?:https?://)?(?:www\.)?(?:x\.com|twitter\.com)/([A-Za-z0-9_]{1,15})(?:\b|/)",
+        text,
+        re.IGNORECASE,
+    )
+    for handle in handles:
+        niche = REFERENCE_ACCOUNT_NICHES.get(handle.casefold())
+        if niche:
+            return niche
+    return None
+
+
 def classify_twitter_niche(*values: str) -> str | None:
     text = _combined(values)
     if is_sport(text):
         return None
+    reference_niche = reference_account_niche(*values)
+    if reference_niche:
+        return reference_niche
     scores = {
         niche: sum(bool(re.search(pattern, text, re.I)) for pattern in patterns)
         for niche, patterns in NICHE_PATTERNS.items()
