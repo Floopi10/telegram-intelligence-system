@@ -151,8 +151,9 @@ def evaluate_knowledge_balance(
     title = _normalized(chat_title)
     context = _content_without_links(normalized)
     word_count = _word_count(context)
+    is_alpha = PRIORITY_ALPHA in title
 
-    if len(context) < 45 or word_count < 7:
+    if not is_alpha and (len(context) < 45 or word_count < 7):
         return KnowledgeBalanceDecision(False, primary, niches, "too_short")
     if _matches_any(normalized, ENGAGEMENT_NOISE):
         return KnowledgeBalanceDecision(False, primary, niches, "engagement_noise")
@@ -161,14 +162,13 @@ def evaluate_knowledge_balance(
     if re.fullmatch(r"(?:https?://\S+|@\w+|\s)+", normalized):
         return KnowledgeBalanceDecision(False, primary, niches, "link_only")
 
-    is_alpha = PRIORITY_ALPHA in title
     is_priority_x = any(name in title for name in PRIORITY_X)
     insight = _matches_any(normalized, INSIGHT_SIGNALS)
     alpha_signal = _matches_any(normalized, ALPHA_SIGNALS)
 
     if is_alpha:
-        relevant = matcher_score >= 1 or alpha_signal or insight
-        enough_context = len(context) >= 55 and word_count >= 8
+        relevant = matcher_score >= 1 or bool(niches) or alpha_signal or insight
+        enough_context = len(context) >= 12 and word_count >= 2
     elif is_priority_x:
         relevant = matcher_score >= 2 or insight
         enough_context = len(context) >= 80 and word_count >= 12
