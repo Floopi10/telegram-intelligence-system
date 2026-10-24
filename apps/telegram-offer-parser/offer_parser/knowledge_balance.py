@@ -32,8 +32,7 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "Web3": (
         r"web3", r"crypto", r"blockchain", r"onchain", r"on-chain", r"token",
         r"protocol", r"airdrop", r"\bdefi\b", r"wallet", r"\bnft\b", r"\bl[12]\b",
-        r"solana", r"\bsol\b", r"крипт", r"блокчейн", r"ончейн", r"токен",
-        r"протокол", r"аирдроп",
+        r"крипт", r"блокчейн", r"ончейн", r"токен", r"протокол", r"аирдроп",
     ),
     "BD": (
         r"business development", r"\bbd\b", r"bizdev", r"partnership",
