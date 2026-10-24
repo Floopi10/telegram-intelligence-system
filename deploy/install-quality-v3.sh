@@ -10,12 +10,14 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="$PROJECT_DIR/data/backups/quality-v3-$STAMP"
 
 FILES=(
+  offer_parser/knowledge_balance.py
   offer_parser/twitter_niches.py
   offer_parser/digest.py
   offer_parser/storage.py
   offer_parser/digest_guard.py
   offer_parser/vacancy_filter.py
   tests/test_twitter_radar_v27.py
+  tests/test_knowledge_context.py
   tests/test_vacancy_filter.py
   tests/test_v29.py
   tests/test_digest_dedupe.py
