@@ -23,6 +23,7 @@ from .twitter_ai import (
     format_twitter_intelligence,
 )
 from .twitter_strength import XCollectorClient, decide_strength
+from .twitter_evidence import extract_telegram_performance_evidence
 from .twitter_niches import classify_twitter_niche
 from .knowledge_balance import (
     KnowledgeBalanceDecision,
@@ -301,7 +302,12 @@ async def monitor(settings: Settings) -> None:
                             decision="duplicate", reason="canonical_url", score=None, text=text,
                         )
                         return
-                    analysis = await twitter_ai.analyze(preview)
+                    analysis = await twitter_ai.analyze(preview, text)
+                    telegram_evidence = extract_telegram_performance_evidence(
+                        text,
+                        preview.title,
+                        preview.description,
+                    )
                     niche = classify_twitter_niche(
                         preview.title,
                         preview.description,
@@ -352,6 +358,7 @@ async def monitor(settings: Settings) -> None:
                         "performance_evidence": analysis.performance_evidence,
                         "risk_flags": list(analysis.risk_flags),
                         "reason_ru": analysis.reason_ru,
+                        "telegram_evidence": telegram_evidence.as_dict(),
                     }
                     if strength is not None and metrics is not None:
                         analysis_payload["strength"] = {
