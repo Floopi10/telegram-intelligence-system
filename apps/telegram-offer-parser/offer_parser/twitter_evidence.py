@@ -199,9 +199,9 @@ def compact_evidence(evidence: dict | None) -> str:
     if not evidence or evidence.get("evidence_level") != "self_reported":
         return ""
     parts: list[str] = []
-    if evidence.get("claimed_views") is not None:
+    if int(evidence.get("claimed_views") or 0) >= 1_000:
         parts.append(f"заявлено {int(evidence['claimed_views']):,} views".replace(",", " "))
-    if evidence.get("claimed_likes") is not None:
+    if int(evidence.get("claimed_likes") or 0) >= 100:
         parts.append(f"заявлено {int(evidence['claimed_likes']):,} likes".replace(",", " "))
     if evidence.get("followers_gained") is not None:
         parts.append(f"+{int(evidence['followers_gained']):,} подписчиков".replace(",", " "))

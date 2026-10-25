@@ -46,12 +46,14 @@ each component directory.
 
 ## Quality-first digest
 
-Twitter Radar does not fill a fixed quota. It separates metric-confirmed winners
-from promising mechanics, requires visible X metrics, ranks by velocity and
-engagement before LLM score, and drops low-view posts that only received a high
-text-analysis score. Vacancy and knowledge sections also re-check geography,
-role relevance, campaign spam, greetings and conversational fragments before the
-daily digest is rendered.
+Twitter Radar does not fill a fixed quota. It separates metric-confirmed winners,
+early signals and promising mechanics, requires visible and internally consistent
+X metrics, ranks by velocity and engagement before LLM score, and drops low-view
+posts that only received a high text-analysis score. A post needs at least 500
+views to become a relative winner; posts with 100-499 views can only be labelled
+as early signals. Vacancy and knowledge sections also re-check geography, role
+relevance, campaign spam, greetings and conversational fragments before the daily
+digest is rendered.
 
 When a Telegram message explicitly reports an outcome next to an X link, the
 radar also extracts follower gain, the result window, views-to-followers

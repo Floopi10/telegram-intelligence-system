@@ -58,7 +58,11 @@ def _candidate_rank(item: dict) -> float:
     velocity = float(item.get("velocity_percentile") or 0)
     signal = float(item.get("signal_percentile") or 0)
     signal_rate = float(item.get("signal_rate") or 0)
-    tier_bonus = 100 if item.get("quality_tier") == "winner" else 0
+    tier_bonus = {
+        "winner": 100,
+        "early": 45,
+        "mechanic": 0,
+    }.get(str(item.get("quality_tier") or ""), 0)
     analysis = item.get("analysis") or {}
     evidence_bonus = evidence_rank_bonus(analysis.get("telegram_evidence"))
     return (
@@ -89,17 +93,36 @@ def _quality_tier(item: dict) -> str | None:
     decision = str(item.get("strength_decision") or "")
     kind = str(item.get("strength_kind") or "")
 
+    metrics_consistent = views > 0 and all(
+        value <= views for value in (likes, reposts, bookmarks)
+    )
     absolute_winner = (
-        views >= 10_000 or likes >= 200 or reposts >= 50 or bookmarks >= 50
+        views >= 10_000
+        or (
+            metrics_consistent
+            and views >= 1_000
+            and (likes >= 200 or reposts >= 50 or bookmarks >= 50)
+        )
     )
     relative_winner = (
-        views >= 100
+        views >= 500
         and decision == "keep"
         and kind != "полезная механика"
         and (velocity >= 0.80 or signal >= 0.80)
     )
     if absolute_winner or relative_winner:
         return "winner"
+
+    early_signal = (
+        views >= 100
+        and content_score >= 8
+        and decision == "keep"
+        and kind != "полезная механика"
+        and velocity >= 0.90
+        and signal >= 0.50
+    )
+    if early_signal:
+        return "early"
 
     promising_mechanic = (
         views >= 250
@@ -176,10 +199,11 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
 
     parts: list[str] = []
     winners = sum(item["quality_tier"] == "winner" for item in selected)
-    mechanics = len(selected) - winners
+    early = sum(item["quality_tier"] == "early" for item in selected)
+    mechanics = sum(item["quality_tier"] == "mechanic" for item in selected)
     current = (
         f"🐦 TWITTER RADAR · {now_msk:%d.%m.%Y}\n"
-        f"Залетевшие: {winners} · Перспективные механики: {mechanics}"
+        f"Залетевшие: {winners} · Ранние сигналы: {early} · Механики: {mechanics}"
     )
     for niche in NICHE_ORDER:
         items = [item for item in selected if item["niche"] == niche]
@@ -193,7 +217,11 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
             metrics = f" · {views:,} views".replace(",", " ") if views else ""
             evidence = compact_evidence(analysis.get("telegram_evidence"))
             evidence_suffix = f" · {evidence}" if evidence else ""
-            label = "ЗАЛЕТЕЛ" if item["quality_tier"] == "winner" else "МЕХАНИКА"
+            label = {
+                "winner": "ЗАЛЕТЕЛ",
+                "early": "РАННИЙ СИГНАЛ",
+                "mechanic": "МЕХАНИКА",
+            }[item["quality_tier"]]
             block_lines.extend([
                 f"• [{label} · {item['content_score']}/10]{metrics}{evidence_suffix} {hook}",
                 str(item["canonical_url"]),

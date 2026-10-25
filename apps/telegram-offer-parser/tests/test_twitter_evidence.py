@@ -42,6 +42,10 @@ class TwitterEvidenceTests(unittest.TestCase):
         )
         self.assertIsNone(result.claimed_likes)
 
+    def test_tiny_claimed_counts_are_not_rendered_as_evidence(self):
+        result = extract_telegram_performance_evidence("5 likes и 70 views")
+        self.assertEqual(compact_evidence(result.as_dict()), "")
+
     def test_closest_metric_pair_wins_in_long_case_study(self):
         result = extract_telegram_performance_evidence(
             "Пост собрал 200к просмотров и 10к лайков. "
