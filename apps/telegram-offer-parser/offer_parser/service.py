@@ -12,7 +12,7 @@ from telethon.utils import get_display_name
 from .chats import load_existing_selection, load_selected, write_chats
 from .config import Settings
 from .exclusions import filter_excluded
-from .digest import daily_digest_loop
+from .digest import daily_digest_loop, send_daily_digest_once
 from .matcher import MatchResult, OfferMatcher
 from .storage import OfferRecord, Storage
 from .twitter_priority import TwitterPrioritySource, load_twitter_priority_sources
@@ -564,6 +564,24 @@ async def monitor(settings: Settings) -> None:
         storage.close()
         if knowledge_storage is not None:
             knowledge_storage.close()
+
+
+async def send_digest_now(settings: Settings, *, force: bool = False) -> bool:
+    if not settings.knowledge_enabled:
+        raise RuntimeError("Knowledge-поток выключен; дайджест недоступен")
+    storage = Storage(settings.knowledge_database_path)
+    client = make_client(settings)
+    await client.start()
+    try:
+        return await send_daily_digest_once(
+            client,
+            storage,
+            target=settings.daily_digest_target,
+            force=force,
+        )
+    finally:
+        storage.close()
+        await client.disconnect()
 
 
 async def backfill(settings: Settings, limit: int) -> None:

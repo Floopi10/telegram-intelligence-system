@@ -11,6 +11,7 @@ BACKUP_DIR="$PROJECT_DIR/data/backups/quality-v3-$STAMP"
 
 FILES=(
   offer_parser/knowledge_balance.py
+  offer_parser/cli.py
   offer_parser/twitter_ai.py
   offer_parser/twitter_evidence.py
   offer_parser/twitter_niches.py
@@ -21,6 +22,7 @@ FILES=(
   offer_parser/vacancy_filter.py
   tests/test_twitter_radar_v27.py
   tests/test_twitter_evidence.py
+  tests/test_digest_delivery.py
   tests/test_knowledge_context.py
   tests/test_vacancy_filter.py
   tests/test_v29.py

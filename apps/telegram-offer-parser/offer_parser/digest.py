@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import re
 from datetime import datetime, time, timedelta, timezone
@@ -16,6 +17,7 @@ from .twitter_niches import (
 from .twitter_evidence import compact_evidence, evidence_rank_bonus
 
 MSK = ZoneInfo("Europe/Moscow")
+LOGGER = logging.getLogger(__name__)
 
 
 def _short(value: str, limit: int = 240) -> str:
@@ -260,6 +262,29 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
     return rendered if len(rendered) <= 3900 else rendered[:3899].rstrip() + "…"
 
 
+async def send_daily_digest_once(
+    client,
+    storage: Storage,
+    *,
+    target: str,
+    now_utc: datetime | None = None,
+    force: bool = False,
+) -> bool:
+    now_utc = now_utc or datetime.now(timezone.utc)
+    digest_day = now_utc.astimezone(MSK).date().isoformat()
+    if not force and storage.digest_was_sent(digest_day):
+        return False
+
+    message = build_daily_digest(storage, now_utc)
+    await client.send_message(target, message, link_preview=False)
+    for part in build_twitter_radar_parts(storage, now_utc):
+        await client.send_message(target, part, link_preview=False)
+        await asyncio.sleep(1)
+    storage.mark_digest_sent(digest_day)
+    LOGGER.info("Дайджест отправлен: day=%s target=%s", digest_day, target)
+    return True
+
+
 async def daily_digest_loop(client, storage: Storage, *, target: str, hour_msk: int) -> None:
     while True:
         now_utc = datetime.now(timezone.utc)
@@ -267,12 +292,23 @@ async def daily_digest_loop(client, storage: Storage, *, target: str, hour_msk: 
         digest_day = now_msk.date().isoformat()
         scheduled = datetime.combine(now_msk.date(), time(hour_msk, 0), tzinfo=MSK)
         if now_msk >= scheduled and not storage.digest_was_sent(digest_day):
-            message = build_daily_digest(storage, now_utc)
-            await client.send_message(target, message, link_preview=False)
-            for part in build_twitter_radar_parts(storage, now_utc):
-                await client.send_message(target, part, link_preview=False)
-                await asyncio.sleep(1)
-            storage.mark_digest_sent(digest_day)
+            try:
+                await send_daily_digest_once(
+                    client,
+                    storage,
+                    target=target,
+                    now_utc=now_utc,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOGGER.exception(
+                    "Ошибка отправки дайджеста; повтор через 5 минут: day=%s target=%s",
+                    digest_day,
+                    target,
+                )
+                await asyncio.sleep(300)
+                continue
             await asyncio.sleep(60)
             continue
         next_run = scheduled if now_msk < scheduled else scheduled + timedelta(days=1)

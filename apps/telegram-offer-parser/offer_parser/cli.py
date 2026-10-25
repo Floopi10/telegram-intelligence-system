@@ -13,7 +13,7 @@ from .exclusions import exclude_by_names, include_ids
 from .folders import list_folders, select_folders, select_knowledge_folders
 from .knowledge_audit import audit_knowledge
 from .matcher import OfferMatcher
-from .service import authorize, backfill, monitor, scan_chats
+from .service import authorize, backfill, monitor, scan_chats, send_digest_now
 from .storage import Storage
 from .sources import add_knowledge_source
 
@@ -25,6 +25,15 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("auth", help="войти в Telegram-аккаунт")
     commands.add_parser("scan-chats", help="выгрузить доступные группы в CSV")
     commands.add_parser("monitor", help="слушать новые сообщения")
+    send_digest = commands.add_parser(
+        "send-digest",
+        help="отправить дневной дайджест сейчас",
+    )
+    send_digest.add_argument(
+        "--force",
+        action="store_true",
+        help="отправить повторно, даже если сегодняшний дайджест уже отмечен отправленным",
+    )
     history = commands.add_parser("backfill", help="проверить последние сообщения")
     history.add_argument(
         "--limit",
@@ -114,6 +123,9 @@ def main() -> None:
             asyncio.run(scan_chats(settings))
         elif args.command == "monitor":
             asyncio.run(monitor(settings))
+        elif args.command == "send-digest":
+            sent = asyncio.run(send_digest_now(settings, force=args.force))
+            print("DIGEST_SENT=YES" if sent else "DIGEST_ALREADY_SENT=YES")
         elif args.command == "backfill":
             if args.limit < 1 or args.limit > 5000:
                 raise ValueError("--limit должен быть от 1 до 5000")
