@@ -170,6 +170,44 @@ class TwitterRadarTests(unittest.TestCase):
         self.assertEqual(len(selected), 2)
         self.assertTrue(all(row["quality_tier"] == "winner" for row in selected))
 
+    def test_low_view_post_is_not_called_winner_even_with_broken_engagement(self):
+        row = {
+            "canonical_url": "https://x.com/broken/status/1",
+            "content_score": 8,
+            "views": 64,
+            "likes": 500,
+            "reposts": 200,
+            "bookmarks": 100,
+            "views_per_hour": 100,
+            "velocity_percentile": 0.99,
+            "signal_percentile": 0.99,
+            "signal_rate": 10,
+            "strength_decision": "keep",
+            "strength_kind": "подтверждённый победитель",
+            "analysis_json": json.dumps({"hook": "Claude AI workflow"}),
+        }
+        self.assertEqual(select_twitter_radar([row], 50), [])
+
+    def test_very_early_relative_result_has_honest_label(self):
+        row = {
+            "canonical_url": "https://x.com/early/status/1",
+            "content_score": 8,
+            "views": 112,
+            "likes": 12,
+            "reposts": 2,
+            "bookmarks": 3,
+            "views_per_hour": 112,
+            "velocity_percentile": 0.95,
+            "signal_percentile": 0.70,
+            "signal_rate": 0.05,
+            "strength_decision": "keep",
+            "strength_kind": "ранний кандидат",
+            "analysis_json": json.dumps({"hook": "Claude AI workflow"}),
+        }
+        selected = select_twitter_radar([row], 50)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["quality_tier"], "early")
+
 
 if __name__ == "__main__":
     unittest.main()
