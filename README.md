@@ -59,6 +59,10 @@ conversion, revenue and content format. These claims remain labelled as
 self-reported: they improve ordering and explainability, but cannot make a post a
 winner without metrics collected directly from X.
 
+Digest delivery retries temporary Telegram failures every five minutes instead of
+silently stopping. Operators can perform a controlled catch-up with
+`offer-parser send-digest --force` while the monitor service is stopped.
+
 ## License
 
 AGPL-3.0. Network-hosted modified versions must make their corresponding source
