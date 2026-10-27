@@ -16,9 +16,13 @@ dedupe.similarity = lambda *args: 0.0
 sys.modules.setdefault("offer_parser.dedupe", dedupe)
 
 from offer_parser.digest import build_daily_digest, select_twitter_radar
-from offer_parser.digest_guard import is_knowledge_noise, split_digest_rows
+from offer_parser.digest_guard import (
+    is_digest_worthy_knowledge,
+    is_knowledge_noise,
+    split_digest_rows,
+)
 from offer_parser.storage import Storage
-from offer_parser.vacancy_filter import evaluate_vacancy
+from offer_parser.vacancy_filter import evaluate_vacancy, is_vacancy_text
 
 
 def candidate(index: int, *, topic: str = "AI agents", hook: str = "Useful AI workflow") -> dict:
@@ -77,6 +81,49 @@ class QualityV29Tests(unittest.TestCase):
         self.assertTrue(is_knowledge_noise(campaign))
         self.assertTrue(is_knowledge_noise(welcome))
         self.assertTrue(is_knowledge_noise(banter))
+
+    def test_current_digest_promos_and_solicitations_are_rejected(self):
+        trivia = "🧠 Trivia— Crypto Scams & Transaction Security. Think you can spot a crypto scam?"
+        solicitation = (
+            "Hello legends! Looking for projects interested in cross-partnerships. "
+            "If any project BD is here, feel free to DM me."
+        )
+        campaign = (
+            "🧪 TestDrive × Sidefleet. For this campaign: try Sidefleet and "
+            "quote-post Mark's launch tweet."
+        )
+        self.assertTrue(is_knowledge_noise(trivia))
+        self.assertTrue(is_knowledge_noise(solicitation))
+        self.assertTrue(is_knowledge_noise(campaign))
+
+    def test_low_score_digest_item_requires_trusted_source(self):
+        generic = {
+            "text": "Several LLMs on one machine with Claude Code.",
+            "score": 2,
+            "chat_title": "ClawEng",
+            "item_kind": "knowledge",
+        }
+        alpha = {
+            "text": "Early BTC mint https://x.com/bitcointapes",
+            "score": 1,
+            "chat_title": "Alpha Professor",
+            "item_kind": "knowledge",
+        }
+        self.assertFalse(is_digest_worthy_knowledge(generic))
+        self.assertTrue(is_digest_worthy_knowledge(alpha))
+
+    def test_unpaid_moderator_vacancy_never_leaks_into_knowledge(self):
+        text = (
+            "TouchGrass Community Moderator Apply: DM Rachit with your experience. "
+            "TouchGrass is looking for 2–3 Community Moderators to join the team."
+        )
+        self.assertTrue(is_vacancy_text(text))
+        vacancies, knowledge, rejected = split_digest_rows([
+            {"text": text, "score": 4, "chat_title": "Build3", "item_kind": "knowledge"},
+        ])
+        self.assertEqual(vacancies, [])
+        self.assertEqual(knowledge, [])
+        self.assertEqual(len(rejected), 1)
 
     def test_radar_uses_rejected_ai_pool_but_blocks_noise(self):
         rows = [candidate(index) for index in range(35)]

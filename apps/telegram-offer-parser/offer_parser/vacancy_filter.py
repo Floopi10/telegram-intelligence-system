@@ -17,6 +17,9 @@ VACANCY_PATTERNS = (
     r"\bvacanc(?:y|ies)\b", r"\bposition\s*:",
     r"\bваканси", r"\bищем\s+(?:сотрудника|специалиста|менеджера|человека)\b",
     r"\bоткрыта\s+позиция\b", r"\bработа\s+в\s+(?:крипте|web3)\b",
+    r"\b(?:is|are|we(?:'re| are)?)\s+looking\s+for\s+(?:an?\s+)?"
+    r"(?:\d+\s*[-–]\s*\d+\s+)?(?:[a-z-]+\s+){0,3}"
+    r"(?:manager|moderator|lead|specialist|associate|representative|developer|engineer|designer|analyst|writer)s?\b",
 )
 
 ROLE_PATTERNS = (
