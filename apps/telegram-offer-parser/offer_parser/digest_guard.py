@@ -20,7 +20,16 @@ CONTEXT_FRAGMENT = re.compile(
 
 CAMPAIGN_SPAM = re.compile(
     r"\bcommunity\s+(?:growth\s+)?campaign\b|\btotal\s+rewards?\s*:|"
-    r"\bwinners?\s+announced\b|\bcomplete\s+(?:verified\s+)?(?:campaigns?|quests?)\b",
+    r"\bwinners?\s+announced\b|\bcomplete\s+(?:verified\s+)?(?:campaigns?|quests?)\b|"
+    r"\bfor\s+this\s+campaign\b|\btestdrive\b|"
+    r"\bquote[- ]post\b.{0,80}\blaunch\s+tweet\b",
+    re.I,
+)
+
+PROMO_AND_SOLICITATION = re.compile(
+    r"^\s*(?:🧠\s*)?trivia\b|"
+    r"\blooking\s+for\s+projects?\b.{0,160}\b(?:partnership|dm\s+me)\b|"
+    r"\bprojects?\s+interested\s+in\s+cross[- ]partnerships?\b",
     re.I,
 )
 
@@ -35,6 +44,8 @@ PERSONAL_BANTER = re.compile(
     re.I | re.S,
 )
 
+TRUSTED_LOW_SCORE_SOURCES = ("alpha professor",)
+
 
 def is_knowledge_noise(text: str) -> bool:
     normalized = " ".join((text or "").split())
@@ -42,11 +53,25 @@ def is_knowledge_noise(text: str) -> bool:
         return True
     if CAMPAIGN_SPAM.search(normalized) or WELCOME_NOISE.search(normalized):
         return True
+    if PROMO_AND_SOLICITATION.search(normalized):
+        return True
     if PERSONAL_BANTER.search(normalized):
         return True
     if len(normalized) < 260 and CONTEXT_FRAGMENT.search(normalized):
         return True
     return False
+
+
+def is_digest_worthy_knowledge(item: dict) -> bool:
+    text = str(item.get("text") or "")
+    if is_knowledge_noise(text):
+        return False
+    score = item.get("score")
+    if score is None:
+        return True
+    title = " ".join(str(item.get("chat_title") or "").casefold().split())
+    trusted_source = any(source in title for source in TRUSTED_LOW_SCORE_SOURCES)
+    return trusted_source or int(score) >= 4
 
 
 def split_digest_rows(rows: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
@@ -62,6 +87,6 @@ def split_digest_rows(rows: list[dict]) -> tuple[list[dict], list[dict], list[di
                 vacancies.append(item)
             else:
                 rejected.append(item)
-        elif item.get("item_kind") == "knowledge" and not is_knowledge_noise(text):
+        elif item.get("item_kind") == "knowledge" and is_digest_worthy_knowledge(item):
             knowledge.append(item)
     return vacancies, knowledge, rejected
