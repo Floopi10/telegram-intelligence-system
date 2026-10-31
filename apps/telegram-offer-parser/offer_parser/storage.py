@@ -336,6 +336,18 @@ class Storage:
         self.connection.commit()
         return cursor.rowcount == 1
 
+    def twitter_ai_calls_today(self, author: str | None = None) -> int:
+        """Count analyses since UTC midnight, when the provider's daily quota resets."""
+        pattern = f"https://x.com/{author}/status/%" if author else "%"
+        row = self.connection.execute(
+            """
+            SELECT COUNT(*) FROM twitter_intelligence
+            WHERE created_at >= datetime('now', 'start of day') AND canonical_url LIKE ?
+            """,
+            (pattern,),
+        ).fetchone()
+        return int(row[0])
+
     def radar_refresh_candidates(self, start_utc: datetime, limit: int) -> list[dict]:
         rows = self.connection.execute(
             """

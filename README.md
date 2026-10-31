@@ -66,6 +66,11 @@ re-reads X metrics for up to 30 candidates first, so a post is judged by its cur
 result rather than the moment it was first seen. A later snapshot can confirm a post
 but never demote it.
 
+LLM analysis of X posts is limited to protect the provider's daily quota: engagement
+requests and a third post from one author per UTC day are skipped, and
+`TWITTER_AI_DAILY_BUDGET` (default 680) is spread evenly across the day. Priority
+chats skip the filters and the pacing. A skipped URL can be analysed on its next mention.
+
 Digest delivery retries temporary Telegram failures every five minutes instead of
 silently stopping, and a retry skips the parts already delivered. Instant
 notifications go through a persistent outbox, so a Telegram failure or flood wait
