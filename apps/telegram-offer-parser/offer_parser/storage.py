@@ -27,7 +27,7 @@ class OfferRecord:
 
 class Storage:
     def __init__(self, path: Path):
-        self.connection = sqlite3.connect(path)
+        self.connection = sqlite3.connect(path, timeout=30)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA synchronous=NORMAL")
@@ -158,6 +158,36 @@ class Storage:
             )
             """
         )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS digest_parts (
+                digest_day TEXT NOT NULL,
+                part_index INTEGER NOT NULL,
+                sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (digest_day, part_index)
+            )
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                dedupe_key TEXT NOT NULL UNIQUE,
+                target TEXT NOT NULL,
+                body TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(status, next_attempt_at)"
+        )
+        self.connection.execute("DELETE FROM outbox WHERE status = 'sent' AND created_at < datetime('now', '-30 days')")
+        self.connection.execute("DELETE FROM digest_parts WHERE sent_at < datetime('now', '-30 days')")
         self.connection.execute("DELETE FROM audit_decisions WHERE created_at < datetime('now', '-30 days')")
         self.connection.execute("DELETE FROM semantic_items WHERE created_at < datetime('now', '-30 days')")
         self.connection.commit()
@@ -241,24 +271,24 @@ class Storage:
         ).fetchone() is not None
 
     def twitter_strength_baselines(
-        self, *, author: str, age_bucket: str, limit: int = 500,
+        self, *, author: str, age_bucket: str, limit: int = 500, exclude_url: str = "",
     ) -> tuple[list[dict], list[dict]]:
         columns = "views_per_hour, signal_rate"
         author_rows = self.connection.execute(
             f"""
             SELECT {columns} FROM twitter_strength_candidates
-            WHERE author = ? AND age_bucket = ?
+            WHERE author = ? AND age_bucket = ? AND canonical_url != ?
             ORDER BY collected_at DESC LIMIT ?
             """,
-            (author, age_bucket, limit),
+            (author, age_bucket, exclude_url, limit),
         ).fetchall()
         cohort_rows = self.connection.execute(
             f"""
             SELECT {columns} FROM twitter_strength_candidates
-            WHERE age_bucket = ?
+            WHERE age_bucket = ? AND canonical_url != ?
             ORDER BY collected_at DESC LIMIT ?
             """,
-            (age_bucket, limit),
+            (age_bucket, exclude_url, limit),
         ).fetchall()
         return [dict(row) for row in author_rows], [dict(row) for row in cohort_rows]
 
@@ -305,6 +335,54 @@ class Storage:
         )
         self.connection.commit()
         return cursor.rowcount == 1
+
+    def radar_refresh_candidates(self, start_utc: datetime, limit: int) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT ti.canonical_url, ti.chat_id, ti.message_id, ti.chat_title,
+                   ti.ai_score, ti.analysis_json,
+                   ts.decision AS strength_decision, ts.collected_at
+            FROM twitter_intelligence AS ti
+            LEFT JOIN twitter_strength_candidates AS ts
+              ON ts.canonical_url = ti.canonical_url
+            WHERE ti.created_at >= datetime(?)
+              AND json_extract(ti.analysis_json, '$.ai_keep') = 1
+            ORDER BY ti.ai_score DESC, ti.created_at DESC
+            LIMIT ?
+            """,
+            (start_utc.strftime("%Y-%m-%d %H:%M:%S"), limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_twitter_strength(self, *, canonical_url: str, metrics, strength) -> None:
+        """Store fresh metrics. A later snapshot can confirm a post, never demote it."""
+        self.connection.execute(
+            """
+            UPDATE twitter_strength_candidates SET
+                collected_at = ?, age_bucket = ?, age_hours = ?,
+                views = ?, likes = ?, reposts = ?, replies = ?, bookmarks = ?,
+                views_per_hour = ?, signal_rate = ?,
+                baseline_scope = ?, baseline_size = ?,
+                velocity_percentile = ?, signal_percentile = ?,
+                strength_kind = CASE WHEN ? THEN ? ELSE strength_kind END,
+                strength_reason = CASE WHEN ? THEN ? ELSE strength_reason END,
+                decision = CASE WHEN ? THEN 'keep' ELSE decision END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE canonical_url = ?
+            """,
+            (
+                metrics.collected_at.isoformat(), metrics.age_bucket, metrics.age_hours,
+                metrics.views, metrics.likes, metrics.reposts, metrics.replies,
+                metrics.bookmarks, metrics.views_per_hour, metrics.signal_rate,
+                strength.baseline_scope, strength.baseline_size,
+                strength.velocity_percentile, strength.signal_percentile,
+                strength.keep, strength.kind,
+                strength.keep, strength.reason_ru,
+                strength.keep,
+                canonical_url,
+            ),
+        )
+        self.connection.commit()
 
     def save_twitter_analysis(
         self, *, canonical_url: str, chat_id: int, message_id: int,
@@ -420,9 +498,76 @@ class Storage:
             "SELECT 1 FROM digest_runs WHERE digest_day = ?", (digest_day,)
         ).fetchone() is not None
 
-    def mark_digest_sent(self, digest_day: str) -> None:
+    def mark_digest_sent(self, digest_day: str, sent_at: datetime | None = None) -> None:
+        moment = (sent_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
         self.connection.execute(
-            "INSERT OR IGNORE INTO digest_runs (digest_day) VALUES (?)", (digest_day,)
+            "INSERT OR IGNORE INTO digest_runs (digest_day, sent_at) VALUES (?, ?)",
+            (digest_day, moment.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        self.connection.commit()
+
+    def last_digest_sent_before(self, digest_day: str) -> datetime | None:
+        row = self.connection.execute(
+            "SELECT sent_at FROM digest_runs WHERE digest_day < ? ORDER BY digest_day DESC LIMIT 1",
+            (digest_day,),
+        ).fetchone()
+        if row is None:
+            return None
+        return datetime.fromisoformat(row["sent_at"]).replace(tzinfo=timezone.utc)
+
+    def digest_parts_sent(self, digest_day: str) -> set[int]:
+        rows = self.connection.execute(
+            "SELECT part_index FROM digest_parts WHERE digest_day = ?", (digest_day,)
+        ).fetchall()
+        return {int(row["part_index"]) for row in rows}
+
+    def mark_digest_part_sent(self, digest_day: str, part_index: int) -> None:
+        self.connection.execute(
+            "INSERT OR IGNORE INTO digest_parts (digest_day, part_index) VALUES (?, ?)",
+            (digest_day, part_index),
+        )
+        self.connection.commit()
+
+    def enqueue_message(self, *, dedupe_key: str, target: str, body: str) -> bool:
+        cursor = self.connection.execute(
+            "INSERT OR IGNORE INTO outbox (dedupe_key, target, body) VALUES (?, ?, ?)",
+            (dedupe_key, target, body),
+        )
+        self.connection.commit()
+        return cursor.rowcount == 1
+
+    def outbox_due(self, limit: int = 20) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT id, target, body, attempts FROM outbox
+            WHERE status = 'pending' AND next_attempt_at <= CURRENT_TIMESTAMP
+            ORDER BY id LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def outbox_mark_sent(self, message_id: int) -> None:
+        self.connection.execute("UPDATE outbox SET status = 'sent' WHERE id = ?", (message_id,))
+        self.connection.commit()
+
+    def outbox_defer(
+        self, message_id: int, *, delay_seconds: int, error: str,
+        count_attempt: bool = True, give_up: bool = False,
+    ) -> None:
+        self.connection.execute(
+            """
+            UPDATE outbox SET
+                attempts = attempts + ?,
+                last_error = ?,
+                status = ?,
+                next_attempt_at = datetime('now', ?)
+            WHERE id = ?
+            """,
+            (
+                int(count_attempt), error[:500], "failed" if give_up else "pending",
+                f"+{int(delay_seconds)} seconds", message_id,
+            ),
         )
         self.connection.commit()
 

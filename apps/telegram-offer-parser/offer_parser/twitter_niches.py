@@ -55,19 +55,19 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "Финансы": (
         r"financ", r"financial market", r"trading", r"trader", r"invest",
-        r"stock", r"equity", r"credit suisse", r"banking", r"hedge fund",
+        r"\bstocks?\b", r"\bequity\b", r"credit suisse", r"banking", r"hedge fund",
         r"macro", r"portfolio", r"econom", r"polymarket", r"profit",
-        r"финанс", r"рынок", r"трейд", r"инвест", r"банк", r"эконом",
+        r"финанс", r"рынок", r"трейд", r"инвест", r"\bбанк", r"эконом",
     ),
     "Роботы": (
         r"robot", r"robotics", r"humanoid", r"embodied", r"drone",
         r"optimus", r"automation hardware", r"робот", r"гуманоид", r"дрон",
     ),
     "Девушки и lifestyle": (
-        r"\bgirl", r"\bwomen?\b", r"female", r"beauty", r"fashion",
+        r"\bgirl", r"\bwomen?\b", r"\bfemale", r"beauty", r"fashion",
         r"makeup", r"skincare", r"outfit", r"fashion model", r"lifestyle",
-        r"onlyfans", r"\bof model", r"девуш", r"женщин", r"мода", r"красот",
-        r"макияж", r"уход",
+        r"onlyfans", r"\bof model", r"девуш", r"женщин", r"\bмод[аыеу]\b", r"красот",
+        r"макияж", r"\bуход",
     ),
     "Claude + Obsidian": (
         r"claude.{0,40}obsidian", r"obsidian.{0,40}claude",
@@ -82,24 +82,24 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
     "Web3": (
         r"web3", r"crypto", r"blockchain", r"onchain", r"token", r"defi",
-        r"airdrop", r"wallet", r"protocol", r"dao", r"крипт", r"блокчейн",
+        r"airdrop", r"wallet", r"protocol", r"\bdao\b", r"крипт", r"блокчейн",
         r"токен", r"ончейн", r"аирдроп",
     ),
     "Технологии": (
         r"software", r"developer", r"coding", r"github", r"open.source",
-        r"startup", r"saas", r"\bapi\b", r"hardware", r"tech", r"zero.day",
+        r"startup", r"saas", r"\bapi\b", r"hardware", r"\btech", r"zero.day",
         r"vulnerabil", r"remote code execution", r"windows process", r"railway",
         r"infrastructure", r"terminal", r"sandbox", r"registry cred",
-        r"разработ", r"код", r"приложен", r"стартап", r"технолог",
+        r"разработ", r"\bкод(?!екс)", r"приложен", r"стартап", r"технолог",
     ),
     "Маркетинг и контент": (
-        r"marketing", r"creator", r"content", r"viral", r"hook", r"growth",
+        r"marketing", r"creator", r"content", r"viral", r"\bhooks?\b", r"growth",
         r"audience", r"brand", r"conversion", r"retention", r"storytelling",
         r"маркетинг", r"контент", r"вирал", r"хук", r"аудитори", r"бренд",
     ),
     "Игры": (
-        r"gaming", r"game dev", r"game studio", r"gameplay", r"steam",
-        r"unity", r"unreal engine", r"игр", r"геймдев",
+        r"gaming", r"game dev", r"game studio", r"gameplay", r"\bsteam\b",
+        r"\bunity\b", r"unreal engine", r"\bигр", r"геймдев",
     ),
 }
 
@@ -107,8 +107,10 @@ SPORT_PATTERNS = (
     r"football", r"soccer", r"basketball", r"tennis", r"baseball",
     r"hockey", r"champions league", r"premier league", r"bundesliga",
     r"\bxg\b", r"corners? per match", r"shots? per match", r"bayern",
-    r"real madrid", r"barcelona", r"manchester", r"nba", r"nfl", r"nhl",
-    r"футбол", r"баскетбол", r"теннис", r"хоккей", r"матч", r"голов?",
+    r"real madrid", r"fc barcelona", r"manchester (?:united|city)",
+    r"\bnba\b", r"\bnfl\b", r"\bnhl\b",
+    r"футбол", r"баскетбол", r"теннис", r"хоккей",
+    r"\bматч(?:а|у|ем|е|и|ей|ам|ами|ах)?\b", r"\bгол(?:а|ов|ы)?\b",
 )
 
 RADAR_NOISE_PATTERNS = (
@@ -120,7 +122,8 @@ RADAR_NOISE_PATTERNS = (
 
 
 def _combined(values: Iterable[str]) -> str:
-    return " ".join(str(value or "") for value in values).casefold()
+    joined = " ".join(str(value or "") for value in values).casefold()
+    return re.sub(r"https?://\S+", " ", joined)
 
 
 def is_sport(*values: str) -> bool:

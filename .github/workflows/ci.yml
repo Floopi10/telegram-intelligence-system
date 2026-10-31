@@ -28,6 +28,11 @@ jobs:
         env:
           PYTHONPATH: apps/telegram-offer-parser:services/people-radar
         run: python services/people-radar/test_people_radar.py
+      - name: Test Obsidian bot
+        working-directory: apps/obsidian-bot
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -p 'test_*.py'
       - name: Compile remaining components
         run: >-
           python -m py_compile
@@ -35,6 +40,8 @@ jobs:
           apps/obsidian-bot/config.py
           apps/obsidian-bot/llm.py
           apps/obsidian-bot/machine_note.py
+          apps/obsidian-bot/parser.py
+          apps/obsidian-bot/vault.py
           apps/miniapp/app.py
           services/x-collector/x_service.py
 

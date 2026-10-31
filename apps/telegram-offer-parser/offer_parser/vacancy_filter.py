@@ -75,7 +75,7 @@ ALLOWED_REGION_PATTERNS = (
 )
 BLOCKED_REGION_PATTERNS = (
     r"\busa\b", r"\bu\.s\.\b", r"\bunited states\b", r"\bus[- ]only\b", r"\bсша\b",
-    r"\blatam\b", r"\blatin america\b", r"\bлатам\b", r"\blатинск",
+    r"\blatam\b", r"\blatin america\b", r"\bлатам\b", r"\bлатинск",
     r"\bmexico\b", r"\bcolombia\b", r"\bbrazil\b", r"\bargentina\b", r"\bchile\b",
     r"\bperu\b", r"\bvenezuela\b", r"\becuador\b", r"\bpanama\b", r"\bparaguay\b",
     r"\buruguay\b", r"\bbolivia\b", r"\bguatemala\b", r"\bhonduras\b",

@@ -1,6 +1,7 @@
 """Запись заметок в Obsidian vault."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -33,12 +34,20 @@ def _safe_filename(title: str, max_len: int = 100) -> str:
     return name[:max_len].rstrip(". ")
 
 
+def _yaml_str(value: str) -> str:
+    # A JSON string is a valid YAML double-quoted scalar, including quotes and newlines.
+    return json.dumps(" ".join(str(value).split()), ensure_ascii=False)
+
+
 def _yaml_list(items: Iterable[str]) -> str:
-    items = list(items)
-    if not items:
-        return "[]"
-    quoted = [f'"{x}"' for x in items]
-    return "[" + ", ".join(quoted) + "]"
+    return "[" + ", ".join(_yaml_str(item) for item in items) + "]"
+
+
+def _attachment_name(suggested_name: str) -> str:
+    """Telegram file names are sender-controlled and must stay inside the attachments folder."""
+    name = suggested_name.replace("\\", "/").rsplit("/", 1)[-1]
+    name = re.sub(r'[<>:"|?*\x00-\x1f]', "", name).strip().rstrip(". ")
+    return name[:150] or "file"
 
 
 def _merge_sources(body: str, urls: Iterable[str]) -> str:
@@ -70,21 +79,19 @@ def _format_frontmatter(
 ) -> str:
     lines = [
         "---",
-        f'title: "{title.replace(chr(34), chr(39))}"',
+        f"title: {_yaml_str(title)}",
         f"created: {created.strftime('%Y-%m-%dT%H:%M:%S')}",
-        f'category: "{category}"',
+        f"category: {_yaml_str(category)}",
         f"tags: {_yaml_list(tags)}",
     ]
     if source:
-        lines.append(f"source: {source}")
+        lines.append(f"source: {_yaml_str(source)}")
     if chat:
-        lines.append(f'chat: "{chat}"')
+        lines.append(f"chat: {_yaml_str(chat)}")
     if author:
-        lines.append(f'author: "{author}"')
+        lines.append(f"author: {_yaml_str(author)}")
     if summary:
-        # Замаскируем переносы и кавычки
-        clean = summary.replace("\n", " ").replace('"', "'")
-        lines.append(f'summary: "{clean}"')
+        lines.append(f"summary: {_yaml_str(summary)}")
     lines.append("---")
     return "\n".join(lines)
 
@@ -99,7 +106,7 @@ class Vault:
 
     async def save_media(self, file_bytes: bytes, suggested_name: str) -> Path:
         """Сохраняет файл во вложения. Возвращает путь относительно inbox."""
-        target = self._s.attachments_path / suggested_name
+        target = self._s.attachments_path / _attachment_name(suggested_name)
         target = self._unique_path(target)
         async with aiofiles.open(target, "wb") as f:
             await f.write(file_bytes)

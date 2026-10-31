@@ -33,12 +33,22 @@ def _fields(text: str) -> Dict[str, str]:
     for line in text.splitlines():
         match = re.match(r"^([^:\n]{2,40}):\s*(.*)$", line.strip())
         if match:
-            result[match.group(1).strip().casefold()] = match.group(2).strip()
+            # Parser headers come first; a "Чат: x" line inside the quoted post must not replace them.
+            result.setdefault(match.group(1).strip().casefold(), match.group(2).strip())
     return result
 
 
+# Only real section labels end a section; body lines such as "- Просмотры: 100" belong to it.
+SECTION_LABELS = (
+    "Полный разбор", "Ключевые мысли", "Метрики", "Метрики поста",
+    "Реальные метрики X", "Механика удержания", "Паттерн для стратегии",
+    "Цитата и источник", "Оригинальный текст",
+)
+_SECTION_END = "|".join(re.escape(label) for label in SECTION_LABELS)
+
+
 def _section(text: str, label: str) -> str:
-    pattern = rf"(?ims)^(?:##\s*)?{re.escape(label)}:\s*\n?(.*?)(?=\n(?:##\s*)?[^:\n]{{2,40}}:\s*|\Z)"
+    pattern = rf"(?ims)^(?:##\s*)?{re.escape(label)}:[ \t]*\n?(.*?)(?=\n(?:##\s*)?(?:{_SECTION_END}):|\Z)"
     match = re.search(pattern, text)
     return match.group(1).strip() if match else ""
 
@@ -124,8 +134,15 @@ def _twitter_body(text: str, fields: Dict[str, str], original: str) -> Tuple[str
     key_points = _section(text, "Ключевые мысли") or fields.get("сигналы") or analysis
     retention = _section(text, "Механика удержания") or "Не определена без повторного AI-разбора."
     pattern = _section(text, "Паттерн для стратегии") or "Требует ручной проверки по исходному посту."
-    metrics = _section(text, "Метрики поста") or fields.get("метрики") or fields.get("подтверждение метрик")
-    metrics_block = f"\n\n## Метрики поста\n{metrics}" if metrics and metrics.casefold() != "none" else ""
+    metrics = "\n".join(
+        value for value in (
+            _section(text, "Реальные метрики X"),
+            _section(text, "Метрики поста") or _section(text, "Метрики"),
+            fields.get("подтверждение метрик"),
+        )
+        if value and value.casefold() != "none"
+    )
+    metrics_block = f"\n\n## Метрики поста\n{metrics}" if metrics else ""
     body = (
         f"## Суть\n{analysis}\n\n"
         f"## Ключевые мысли\n{key_points}\n\n"

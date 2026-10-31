@@ -24,7 +24,7 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
         r"drone", r"optimus", r"робот", r"гуманоид", r"автономн", r"дрон",
     ),
     "Финансы": (
-        r"financ", r"trading", r"trader", r"market", r"yield", r"portfolio",
+        r"financ", r"trading", r"trader", r"\bmarkets?\b", r"yield", r"portfolio",
         r"invest", r"macro", r"funding rate", r"derivative", r"perpetual",
         r"prediction market", r"финанс", r"трейдинг", r"рынок", r"доходност",
         r"инвест", r"портфел", r"фандинг",
@@ -45,9 +45,9 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
         r"маркетинг", r"воронк", r"конверси", r"кампани", r"трафик",
     ),
     "Контент": (
-        r"twitter", r"x\.com", r"tweet", r"thread", r"hook", r"impression",
+        r"twitter", r"x\.com", r"tweet", r"thread", r"\bhooks?\b", r"impression",
         r"creator", r"viral", r"content", r"твиттер", r"твит", r"тред",
-        r"пост", r"хук", r"охват", r"вирал", r"контент",
+        r"\bпост(?:а|у|ом|е|ы|ов|ам|ами|ах)?\b", r"\bхук", r"охват", r"вирал", r"контент",
     ),
     "Инструменты": (
         r"tool", r"framework", r"coding", r"developer", r"github", r"product",

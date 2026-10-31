@@ -62,17 +62,28 @@ def collect(url: str) -> dict[str, object]:
 
             page.route("**/*", protect)
             page.goto(canonical, wait_until="domcontentloaded", timeout=60_000)
-            article = page.locator('article[data-testid="tweet"]').first
-            article.wait_for(timeout=60_000)
+            articles = page.locator('article[data-testid="tweet"]')
+            articles.first.wait_for(timeout=60_000)
+            # On a reply's page the parent posts render first; metrics must come from the requested post.
+            permalink = f'a[href$="/status/{match.group(2)}"]'
+            focal = articles.filter(has=page.locator(f"{permalink} time"))
+            if focal.count():
+                article = focal.first
+            elif articles.count() == 1:
+                article = articles.first
+            else:
+                raise RuntimeError("Requested post was not found among rendered posts")
             text = first_text(article.locator('[data-testid="tweetText"]').first)
             if not text:
                 raise RuntimeError("Post text was not found; profile may require login")
             time_node = article.locator("time").first
             published = time_node.get_attribute("datetime") if time_node.count() else None
+            href = article.locator(f"{permalink}").first.get_attribute("href") or ""
+            handle = URL_PATTERN.match(f"https://x.com{href}")
             result: dict[str, object] = {
                 "collected_at": datetime.now(timezone.utc).isoformat(),
                 "url": canonical,
-                "author": match.group(1),
+                "author": handle.group(1) if handle else match.group(1),
                 "text": text,
                 "published_at": published,
             }
