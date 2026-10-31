@@ -5,11 +5,16 @@ import math
 from dataclasses import asdict, dataclass
 
 
-NUMBER = r"(?P<number>\d+(?:[.,]\d+)?)\s*(?P<suffix>k|к|m|м|тыс(?:яч[аи]?)?|млн)?"
+GROUPED_NUMBER = r"\d{1,3}(?:[ ,.]\d{3})+"
+NUMBER = rf"(?P<number>{GROUPED_NUMBER}|\d+(?:[.,]\d+)?)\s*(?P<suffix>k|к|m|м|тыс(?:яч[аи]?)?|млн)?"
 
 
 def _scaled(match: re.Match[str]) -> int:
-    value = float(match.group("number").replace(",", "."))
+    raw = match.group("number")
+    if re.fullmatch(GROUPED_NUMBER, raw):
+        value = float(re.sub(r"[ ,.]", "", raw))
+    else:
+        value = float(raw.replace(",", "."))
     suffix = (match.group("suffix") or "").casefold()
     if suffix in {"k", "к"} or suffix.startswith("тыс"):
         value *= 1_000
@@ -103,7 +108,7 @@ def extract_telegram_performance_evidence(*values: str) -> TelegramPerformanceEv
 
     # Pair the closest explicit view/follower mentions. This prevents a long
     # case study with several unrelated figures from producing a fake ratio.
-    number_token = r"\d+(?:[.,]\d+)?\s*(?:k|к|m|м|тыс(?:яч[аи]?)?|млн)?"
+    number_token = rf"(?:{GROUPED_NUMBER}|\d+(?:[.,]\d+)?)\s*(?:k|к|m|м|тыс(?:яч[аи]?)?|млн)?"
     view_mentions = [
         (match.start(), _scaled_text(match.group(0)))
         for pattern in (

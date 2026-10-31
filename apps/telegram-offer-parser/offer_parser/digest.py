@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+import time as monotonic_time
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -15,9 +16,14 @@ from .twitter_niches import (
     is_twitter_radar_noise,
 )
 from .twitter_evidence import compact_evidence, evidence_rank_bonus
+from .twitter_strength import decide_strength
 
 MSK = ZoneInfo("Europe/Moscow")
 LOGGER = logging.getLogger(__name__)
+CATCH_UP_LIMIT = timedelta(hours=72)
+REFRESH_LIMIT = 30
+REFRESH_BUDGET_SECONDS = 600
+REFRESH_MIN_AGE = timedelta(hours=2)
 
 
 def _short(value: str, limit: int = 240) -> str:
@@ -42,6 +48,9 @@ def _clean_hook(value: str) -> str:
 
 
 NICHE_LIMITS = {
+    "Claude + Obsidian": 5,
+    "Mac mini": 5,
+    "Математика": 5,
     "AI": 9,
     "Финансы": 8,
     "Роботы": 7,
@@ -96,13 +105,9 @@ def _quality_tier(item: dict) -> str | None:
     metrics_consistent = views > 0 and all(
         value <= views for value in (likes, reposts, bookmarks)
     )
-    absolute_winner = (
+    absolute_winner = metrics_consistent and (
         views >= 10_000
-        or (
-            metrics_consistent
-            and views >= 1_000
-            and (likes >= 200 or reposts >= 50 or bookmarks >= 50)
-        )
+        or (views >= 1_000 and (likes >= 200 or reposts >= 50 or bookmarks >= 50))
     )
     relative_winner = (
         views >= 500
@@ -157,11 +162,14 @@ def select_twitter_radar(candidates: list[dict], limit: int = 50) -> list[dict]:
             " ".join(str(value) for value in analysis.get("risk_flags", []) or []),
         ):
             continue
-        niche = classify_twitter_niche(
-            str(analysis.get("topic") or ""),
-            str(analysis.get("hook") or ""),
-            str(analysis.get("analysis_ru") or ""),
-        ) or ""
+        niche = str(analysis.get("niche") or "")
+        if niche not in NICHE_ORDER:
+            niche = classify_twitter_niche(
+                url,
+                str(analysis.get("topic") or ""),
+                str(analysis.get("hook") or ""),
+                str(analysis.get("analysis_ru") or ""),
+            ) or ""
         if niche not in NICHE_ORDER:
             continue
         enriched = dict(item)
@@ -188,11 +196,80 @@ def select_twitter_radar(candidates: list[dict], limit: int = 50) -> list[dict]:
     return selected
 
 
+def digest_window_start(storage: Storage, now_utc: datetime) -> datetime:
+    """Start where the previous digest stopped, so evening items are not lost."""
+    now_msk = now_utc.astimezone(MSK)
+    day_start = datetime.combine(now_msk.date(), time.min, tzinfo=MSK).astimezone(timezone.utc)
+    previous = storage.last_digest_sent_before(now_msk.date().isoformat())
+    if previous is None:
+        return day_start
+    return min(day_start, max(previous, now_utc - CATCH_UP_LIMIT))
+
+
+async def refresh_radar_metrics(
+    storage: Storage,
+    collector,
+    start_utc: datetime,
+    *,
+    now_utc: datetime,
+    limit: int = REFRESH_LIMIT,
+    budget_seconds: float = REFRESH_BUDGET_SECONDS,
+) -> int:
+    """Re-read X metrics: a post seen one hour after publishing is judged by its current result."""
+    deadline = monotonic_time.monotonic() + budget_seconds
+    refreshed = 0
+    for row in storage.radar_refresh_candidates(start_utc, limit):
+        if monotonic_time.monotonic() >= deadline:
+            LOGGER.warning("Обновление метрик остановлено по лимиту времени: %s", refreshed)
+            break
+        if row["collected_at"]:
+            collected = datetime.fromisoformat(row["collected_at"])
+            if now_utc - collected < REFRESH_MIN_AGE:
+                continue
+        url = row["canonical_url"]
+        try:
+            metrics = await collector.collect(url)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            LOGGER.warning("Метрики не обновлены %s: %s", url, type(exc).__name__)
+            continue
+        author_rows, cohort_rows = storage.twitter_strength_baselines(
+            author=metrics.author, age_bucket=metrics.age_bucket, exclude_url=url,
+        )
+        strength = decide_strength(
+            content_score=int(row["ai_score"]),
+            metrics=metrics,
+            author_rows=author_rows,
+            cohort_rows=cohort_rows,
+            kept_today=0,
+            mechanics_today=0,
+            daily_limit=1,
+            mechanics_limit=0,
+        )
+        if row["strength_decision"] is None:
+            storage.save_twitter_strength(
+                canonical_url=url,
+                author=metrics.author,
+                chat_id=row["chat_id"],
+                message_id=row["message_id"],
+                chat_title=row["chat_title"],
+                content_score=int(row["ai_score"]),
+                metrics=metrics,
+                strength=strength,
+                decision="keep" if strength.keep else "watch",
+                analysis=json.loads(row["analysis_json"]),
+            )
+        else:
+            storage.update_twitter_strength(canonical_url=url, metrics=metrics, strength=strength)
+        refreshed += 1
+    return refreshed
+
+
 def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None) -> list[str]:
     now_utc = now_utc or datetime.now(timezone.utc)
     now_msk = now_utc.astimezone(MSK)
-    start_msk = datetime.combine(now_msk.date(), time.min, tzinfo=MSK)
-    data = storage.digest_items(start_msk.astimezone(timezone.utc))
+    data = storage.digest_items(digest_window_start(storage, now_utc))
     selected = select_twitter_radar(data.get("twitter_candidates", []), 50)
     if not selected:
         return []
@@ -239,9 +316,7 @@ def build_twitter_radar_parts(storage: Storage, now_utc: datetime | None = None)
 def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str:
     now_utc = now_utc or datetime.now(timezone.utc)
     now_msk = now_utc.astimezone(MSK)
-    start_msk = datetime.combine(now_msk.date(), time.min, tzinfo=MSK)
-    start_utc = start_msk.astimezone(timezone.utc)
-    data = storage.digest_items(start_utc)
+    data = storage.digest_items(digest_window_start(storage, now_utc))
 
     lines = [f"📊 ДАЙДЖЕСТ · {now_msk:%d.%m.%Y}", ""]
     vacancies = data["vacancies"][:5]
@@ -254,7 +329,7 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
     lines.append("💼 Вакансии")
     if vacancies:
         for item in vacancies:
-            lines.append(f"• [{item['score']}] {_short(item['text'])}")
+            lines.append(f"• [{item['score']}] {_short(item['text'], 160)}")
             if item["source_url"]:
                 lines.append(item["source_url"])
     else:
@@ -267,7 +342,7 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
             hook = _clean_hook(str(analysis.get("hook") or analysis.get("topic") or "X-пост"))
             evidence = compact_evidence(analysis.get("telegram_evidence"))
             evidence_prefix = f"{evidence} · " if evidence else ""
-            lines.append(f"• [{item['content_score']}/10] {_short(evidence_prefix + str(hook), 180)}")
+            lines.append(f"• [{item['content_score']}/10] {_short(evidence_prefix + str(hook), 160)}")
             lines.append(item["canonical_url"])
     else:
         lines.append("• Сильных находок сегодня нет")
@@ -275,7 +350,7 @@ def build_daily_digest(storage: Storage, now_utc: datetime | None = None) -> str
     lines.extend(["", "🧠 Web3 и knowledge"])
     if knowledge:
         for item in knowledge:
-            lines.append(f"• [{item['score']}] {_short(item['text'])}")
+            lines.append(f"• [{item['score']}] {_short(item['text'], 160)}")
             if item["source_url"]:
                 lines.append(item["source_url"])
     else:
@@ -297,23 +372,34 @@ async def send_daily_digest_once(
     target: str,
     now_utc: datetime | None = None,
     force: bool = False,
+    collector=None,
 ) -> bool:
     now_utc = now_utc or datetime.now(timezone.utc)
     digest_day = now_utc.astimezone(MSK).date().isoformat()
     if not force and storage.digest_was_sent(digest_day):
         return False
 
-    message = build_daily_digest(storage, now_utc)
-    await client.send_message(target, message, link_preview=False)
-    for part in build_twitter_radar_parts(storage, now_utc):
+    already_sent = set() if force else storage.digest_parts_sent(digest_day)
+    if collector is not None and not already_sent:
+        await refresh_radar_metrics(
+            storage, collector, digest_window_start(storage, now_utc), now_utc=now_utc,
+        )
+    parts = [build_daily_digest(storage, now_utc), *build_twitter_radar_parts(storage, now_utc)]
+    for index, part in enumerate(parts):
+        if index in already_sent:
+            continue
         await client.send_message(target, part, link_preview=False)
-        await asyncio.sleep(1)
-    storage.mark_digest_sent(digest_day)
+        storage.mark_digest_part_sent(digest_day, index)
+        if index:
+            await asyncio.sleep(1)
+    storage.mark_digest_sent(digest_day, now_utc)
     LOGGER.info("Дайджест отправлен: day=%s target=%s", digest_day, target)
     return True
 
 
-async def daily_digest_loop(client, storage: Storage, *, target: str, hour_msk: int) -> None:
+async def daily_digest_loop(
+    client, storage: Storage, *, target: str, hour_msk: int, collector=None,
+) -> None:
     while True:
         now_utc = datetime.now(timezone.utc)
         now_msk = now_utc.astimezone(MSK)
@@ -326,6 +412,7 @@ async def daily_digest_loop(client, storage: Storage, *, target: str, hour_msk: 
                     storage,
                     target=target,
                     now_utc=now_utc,
+                    collector=collector,
                 )
             except asyncio.CancelledError:
                 raise

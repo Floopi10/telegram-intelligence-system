@@ -307,6 +307,9 @@ async def enrich_profiles(client: TelegramClient, db: sqlite3.Connection, delay:
             db.commit()
             await asyncio.sleep(wait)
             continue
+        except (ConnectionError, TimeoutError) as exc:
+            LOG.warning("PROFILE_RETRY_NEXT_RUN user_id=%s error=%s", row["user_id"], exc)
+            continue
         except (RPCError, ValueError, TypeError) as exc:
             db.execute(
                 "UPDATE people SET bio_fetched=1,profile_error=?,updated_at=? WHERE user_id=?",
@@ -514,7 +517,12 @@ async def run(args: argparse.Namespace) -> int:
     try:
         for index, source in enumerate(sources, 1):
             LOG.info("SOURCE %d/%d %s", index, len(sources), source["title"])
-            await scan_source(client, db, source, args.commit_every)
+            try:
+                await scan_source(client, db, source, args.commit_every)
+            except (RPCError, ConnectionError, TimeoutError) as exc:
+                # The saved cursor lets the next run resume this source; the others still get scanned.
+                db.commit()
+                LOG.error("SOURCE_FAILED title=%s error=%s", source["title"], exc)
         enriched, profile_errors = await enrich_profiles(client, db, args.profile_delay)
         path, exported, excluded_kol = export(db, args.output_dir)
         caption = (

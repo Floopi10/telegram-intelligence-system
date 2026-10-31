@@ -72,11 +72,14 @@ class XCollectorClient:
         self.base_url = str(values.get("X_COLLECTOR_URL") or "").strip().rstrip("/")
         self.token = str(values.get("X_COLLECTOR_TOKEN") or "").strip()
         self.timeout = timeout
+        # The collector drives one browser at a time; queue here so waiting does not eat the HTTP timeout.
+        self._gate = asyncio.Semaphore(1)
         if not self.base_url or not self.token:
             raise RuntimeError(f"X collector не настроен в {env_path}")
 
     async def collect(self, url: str) -> XMetrics:
-        raw = await asyncio.to_thread(self._request, url)
+        async with self._gate:
+            raw = await asyncio.to_thread(self._request, url)
         return parse_metrics(url, raw)
 
     def _request(self, url: str) -> dict:
@@ -99,7 +102,7 @@ class XCollectorClient:
 def parse_number(value: object) -> int | None:
     if value is None:
         return None
-    text = str(value).replace("\u202f", "").replace(" ", "")
+    text = str(value).replace("\u202f", "").replace("\xa0", "").replace(" ", "")
     match = re.search(r"([0-9][0-9,.]*)([KMB]?)", text, re.I)
     if not match:
         return None
@@ -187,9 +190,6 @@ def decide_strength(
     daily_limit: int,
     mechanics_limit: int,
 ) -> StrengthDecision:
-    if kept_today >= daily_limit:
-        return StrengthDecision(False, "watch", "дневной лимит Twitter заполнен", "none", 0, None, None)
-
     usable_author = [row for row in author_rows if row.get("views_per_hour") is not None and row.get("signal_rate") is not None]
     usable_cohort = [row for row in cohort_rows if row.get("views_per_hour") is not None and row.get("signal_rate") is not None]
     if len(usable_author) >= 5:
@@ -201,6 +201,9 @@ def decide_strength(
 
     velocity = percentile(metrics.views_per_hour, [float(row["views_per_hour"]) for row in baseline])
     signal = percentile(metrics.signal_rate, [float(row["signal_rate"]) for row in baseline])
+
+    if kept_today >= daily_limit:
+        return StrengthDecision(False, "watch", "дневной лимит Twitter заполнен", scope, len(baseline), velocity, signal)
 
     if baseline and metrics.views is not None and metrics.views >= 100:
         if metrics.age_hours < 6:

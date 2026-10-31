@@ -61,8 +61,15 @@ conversion, revenue and content format. These claims remain labelled as
 self-reported: they improve ordering and explainability, but cannot make a post a
 winner without metrics collected directly from X.
 
+Each digest covers everything since the previous one (at most 72 hours) and
+re-reads X metrics for up to 30 candidates first, so a post is judged by its current
+result rather than the moment it was first seen. A later snapshot can confirm a post
+but never demote it.
+
 Digest delivery retries temporary Telegram failures every five minutes instead of
-silently stopping. Operators can perform a controlled catch-up with
+silently stopping, and a retry skips the parts already delivered. Instant
+notifications go through a persistent outbox, so a Telegram failure or flood wait
+delays them instead of losing them. Operators can perform a controlled catch-up with
 `offer-parser send-digest --force` while the monitor service is stopped.
 
 ## License

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import FastAPI, Query
@@ -16,9 +17,15 @@ app = FastAPI(title="Telegram Intelligence Dashboard", version="1.0.0")
 def rows(query: str, params: tuple = ()) -> list[dict]:
     if not DB_PATH.exists():
         return []
-    with sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True) as connection:
+    with closing(sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)) as connection:
         connection.row_factory = sqlite3.Row
-        return [dict(row) for row in connection.execute(query, params).fetchall()]
+        try:
+            return [dict(row) for row in connection.execute(query, params).fetchall()]
+        except sqlite3.OperationalError as exc:
+            # A fresh database has no tables until the parser's first start.
+            if "no such table" in str(exc):
+                return []
+            raise
 
 
 @app.get("/health")
@@ -38,7 +45,7 @@ def recent(limit: int = Query(50, ge=1, le=200)) -> list[dict]:
 def metrics() -> dict[str, object]:
     totals = rows("SELECT item_kind, COUNT(*) AS count FROM offers GROUP BY item_kind")
     twitter = rows(
-        "SELECT COUNT(*) AS total, SUM(decision='accepted') AS accepted "
+        "SELECT COUNT(*) AS total, SUM(decision='keep') AS accepted "
         "FROM twitter_strength_candidates"
     )
     return {"items": totals, "twitter": twitter[0] if twitter else {"total": 0, "accepted": 0}}

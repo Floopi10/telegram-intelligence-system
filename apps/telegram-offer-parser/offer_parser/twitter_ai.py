@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,12 +72,29 @@ def canonical_status_url(url: str) -> str | None:
     return f"https://x.com/{match.group(1)}/status/{match.group(2)}"
 
 
-def extract_x_preview(message) -> XPreview | None:
-    text = (getattr(message, "raw_text", "") or "").strip()
-    canonical = next(
-        (value for value in (canonical_status_url(url) for url in X_URL_RE.findall(text)) if value),
+def first_status_url(text: str) -> str | None:
+    return next(
+        (value for value in (canonical_status_url(url) for url in X_URL_RE.findall(text or "")) if value),
         None,
     )
+
+
+def _string_items(value: object) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _bounded_score(value: object) -> int:
+    match = re.search(r"\d+", str(value))
+    return max(0, min(10, int(match.group(0)))) if match else 0
+
+
+def extract_x_preview(message) -> XPreview | None:
+    text = (getattr(message, "raw_text", "") or "").strip()
+    canonical = first_status_url(text)
     if not canonical:
         return None
     webpage = getattr(getattr(message, "media", None), "webpage", None)
@@ -99,11 +117,9 @@ class TwitterAIClient:
 
     async def analyze(self, preview: XPreview, source_context: str = "") -> TwitterAnalysis:
         raw = await asyncio.to_thread(self._request, preview, source_context)
-        score = max(0, min(10, int(raw.get("score", 0))))
+        score = _bounded_score(raw.get("score", 0))
         flags = tuple(dict.fromkeys(
-            str(flag).strip().casefold()
-            for flag in raw.get("risk_flags", [])
-            if str(flag).strip()
+            flag.casefold() for flag in _string_items(raw.get("risk_flags"))
         ))
         keep = bool(raw.get("keep")) and score >= self.min_score
         if HARD_REJECT_FLAGS.intersection(flags):
@@ -113,11 +129,7 @@ class TwitterAIClient:
         evidence = str(raw.get("performance_evidence", "none"))
         if evidence not in {"none", "self_reported", "independently_verified"}:
             evidence = "none"
-        points = tuple(
-            str(point).strip()[:350]
-            for point in raw.get("key_points", [])
-            if str(point).strip()
-        )[:6]
+        points = tuple(point[:350] for point in _string_items(raw.get("key_points")))[:6]
         analysis_ru = str(raw.get("analysis_ru") or raw.get("useful_insight") or "").strip()[:1800]
         return TwitterAnalysis(
             keep=keep,
@@ -168,11 +180,13 @@ class TwitterAIClient:
                     outer = json.loads(response.read().decode("utf-8"))
                 content = outer["choices"][0]["message"]["content"].strip()
                 content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.S)
-                return json.loads(content)
-            except (OSError, KeyError, IndexError, json.JSONDecodeError) as exc:
+                parsed = json.loads(content)
+                if not isinstance(parsed, dict):
+                    raise ValueError("model returned non-object JSON")
+                return parsed
+            except (OSError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
                 last_error = exc
                 if attempt < 2:
-                    import time
                     time.sleep(2 ** attempt)
         raise RuntimeError(f"OpenRouter analysis failed: {last_error}")
 

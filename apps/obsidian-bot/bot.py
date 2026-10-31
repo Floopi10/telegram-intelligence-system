@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
+from html import escape
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -35,10 +36,9 @@ _album_tasks: Dict[str, asyncio.Task] = {}
 ALBUM_DEBOUNCE = 2.0
 
 
-def _is_allowed(settings: Settings, user_id: int) -> bool:
-    if not settings.allowed_user_ids:
-        return True
-    return user_id in settings.allowed_user_ids
+def _is_allowed(settings: Settings, message: Message) -> bool:
+    user = message.from_user
+    return user is not None and user.id in settings.allowed_user_ids
 
 
 async def _download_file(bot: Bot, file_id: str) -> bytes:
@@ -104,7 +104,7 @@ def _chat_title(message: Message) -> Optional[str]:
 # ---------- хэндлеры ----------
 
 async def on_start(message: Message, settings: Settings) -> None:
-    if not _is_allowed(settings, message.from_user.id):
+    if not _is_allowed(settings, message):
         await message.answer("Этот бот закрытый. Доступа нет.")
         return
     await message.answer(
@@ -112,16 +112,18 @@ async def on_start(message: Message, settings: Settings) -> None:
         "Просто перешли мне сообщение, либо отправь текст/фото/файл — "
         "я разберу его через OpenRouter/AI, разложу теги, "
         "сохраню медиа и положу .md-заметку в нужную папку vault.\n\n"
-        f"Vault: <code>{settings.vault_path}</code>\n"
-        f"Inbox: <code>{settings.inbox_path}</code>\n\n"
+        f"Vault: <code>{escape(str(settings.vault_path))}</code>\n"
+        f"Inbox: <code>{escape(str(settings.inbox_path))}</code>\n\n"
         "/help — список категорий"
     )
 
 
 async def on_help(message: Message, settings: Settings) -> None:
+    if not _is_allowed(settings, message):
+        return
     await message.answer(
         "Доступные категории (AI выбирает одну):\n\n"
-        + "\n".join(f"• {c}" for c in settings.categories)
+        + "\n".join(f"• {escape(c)}" for c in settings.categories)
     )
 
 
@@ -129,7 +131,7 @@ async def on_album_part(
     message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot
 ) -> None:
     """Альбом из нескольких медиа приходит несколькими апдейтами с одним media_group_id."""
-    if not _is_allowed(settings, message.from_user.id):
+    if not _is_allowed(settings, message):
         return
 
     mg_id = message.media_group_id
@@ -193,7 +195,7 @@ async def on_single_message(
     message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot
 ) -> None:
     """Одиночное сообщение (не альбом)."""
-    if not _is_allowed(settings, message.from_user.id):
+    if not _is_allowed(settings, message):
         return
     if message.media_group_id:
         return  # обработает on_album_part
@@ -231,7 +233,21 @@ async def _process_post(
     vault: Vault,
 ) -> None:
     status = await message.answer("Разбираю пост…")
+    try:
+        await _save_post(status, message, text, media_paths, llm, vault)
+    except Exception:
+        log.exception("Заметка не сохранена: message_id=%s", message.message_id)
+        await status.edit_text("❌ Заметка не сохранена. Перешли сообщение ещё раз, детали в логах бота.")
 
+
+async def _save_post(
+    status: Message,
+    message: Message,
+    text: str,
+    media_paths: List[Path],
+    llm: LLM,
+    vault: Vault,
+) -> None:
     parsed = parse_post(text)
 
     # Если текста нет — структурируем по filename'ам
@@ -256,7 +272,7 @@ async def _process_post(
         author=_author_name(message),
     )
 
-    tags_str = ", ".join(f"#{t}" for t in (
+    tags_str = ", ".join(f"#{escape(t)}" for t in (
         list(dict.fromkeys(parsed.tags + structured.suggested_tags))
     )) or "—"
 
@@ -273,12 +289,12 @@ async def _process_post(
 
     await status.edit_text(
         f"{header}"
-        f"<b>{structured.title}</b>\n"
-        f"<i>{structured.summary}</i>\n\n"
-        f"📁 <code>{structured.category}</code>\n"
+        f"<b>{escape(structured.title)}</b>\n"
+        f"<i>{escape(structured.summary)}</i>\n\n"
+        f"📁 <code>{escape(structured.category)}</code>\n"
         f"🏷 {tags_str}\n"
         f"📎 медиа: {len(media_paths)}\n"
-        f"📝 <code>{note_path}</code>"
+        f"📝 <code>{escape(str(note_path))}</code>"
     )
 
 
@@ -330,10 +346,10 @@ async def main() -> None:
     dp.include_router(build_router())
 
     log.info("Бот запущен. Vault: %s", settings.vault_path)
-    log.info(
-        "Allowed users: %s",
-        settings.allowed_user_ids if settings.allowed_user_ids else "ВСЕ (открытый бот)",
-    )
+    if settings.allowed_user_ids:
+        log.info("Allowed users: %s", settings.allowed_user_ids)
+    else:
+        log.warning("ALLOWED_USER_IDS пуст: бот отклоняет всех пользователей")
 
     if settings.bot_mode == "webhook":
         app = web.Application()

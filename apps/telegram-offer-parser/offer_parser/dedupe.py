@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 URL_RE = re.compile(r"https?://[^\s<>]+", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[a-zа-яё0-9]{3,}", re.IGNORECASE)
@@ -35,12 +36,19 @@ def build_signature(text: str) -> SemanticSignature:
     return SemanticSignature(exact_hash, tokens, normalized_urls)
 
 
+def _is_content_url(url: str) -> bool:
+    # A profile, channel or homepage link is a signature, not proof of the same content.
+    parts = urlsplit(url)
+    segments = [segment for segment in parts.path.split("/") if segment]
+    return len(segments) >= 2 or bool(parts.query)
+
+
 def similarity(left: SemanticSignature, right_tokens_json: str, right_urls_json: str) -> float:
     right_tokens = set(json.loads(right_tokens_json))
     right_urls = set(json.loads(right_urls_json))
     left_tokens = set(left.tokens)
     left_urls = set(left.urls)
-    if left_urls and right_urls and left_urls.intersection(right_urls):
+    if any(_is_content_url(url) for url in left_urls.intersection(right_urls)):
         return 1.0
     if len(left_tokens) < 8 or len(right_tokens) < 8:
         return 0.0

@@ -20,6 +20,10 @@ FILES=(
   offer_parser/storage.py
   offer_parser/digest_guard.py
   offer_parser/vacancy_filter.py
+  offer_parser/dedupe.py
+  offer_parser/outbox.py
+  offer_parser/twitter_strength.py
+  tests/test_system_hardening.py
   tests/test_twitter_radar_v27.py
   tests/test_twitter_evidence.py
   tests/test_digest_delivery.py
