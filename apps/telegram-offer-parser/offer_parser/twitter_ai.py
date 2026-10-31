@@ -4,8 +4,10 @@ import asyncio
 import json
 import re
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, time as day_time, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -40,6 +42,26 @@ creator monetization, маркетинг, AI tools/agents, automation, coding и
 входе нет, metrics_summary должен быть пустым, а performance_evidence — none.
 Числа автора без независимого подтверждения — self_reported.
 keep=true обычно требует score>=7."""
+
+
+PACING_BURST = 30
+
+
+class TwitterAIRateLimited(RuntimeError):
+    pass
+
+
+def ai_budget_block(
+    *, calls_today: int, budget: int, now_utc: datetime, priority_source: bool,
+) -> str | None:
+    """Spread the daily quota across the UTC day so evening posts are not starved."""
+    if calls_today >= budget:
+        return "ai_budget"
+    midnight = datetime.combine(now_utc.date(), day_time.min, tzinfo=timezone.utc)
+    elapsed = (now_utc - midnight).total_seconds() / 86_400
+    if not priority_source and calls_today >= PACING_BURST + budget * elapsed:
+        return "ai_pacing"
+    return None
 
 
 @dataclass(frozen=True)
@@ -184,10 +206,14 @@ class TwitterAIClient:
                 if not isinstance(parsed, dict):
                     raise ValueError("model returned non-object JSON")
                 return parsed
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429:
+                    raise TwitterAIRateLimited("OpenRouter rate limit") from exc
+                last_error = exc
             except (OSError, KeyError, IndexError, TypeError, AttributeError, ValueError) as exc:
                 last_error = exc
-                if attempt < 2:
-                    time.sleep(2 ** attempt)
+            if attempt < 2:
+                time.sleep(2 ** attempt)
         raise RuntimeError(f"OpenRouter analysis failed: {last_error}")
 
 

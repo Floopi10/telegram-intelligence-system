@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +24,14 @@ from offer_parser.knowledge_balance import classify_niches
 from offer_parser.outbox import MAX_ATTEMPTS, drain_outbox
 from offer_parser.service import MessagePipeline
 from offer_parser.storage import OfferRecord, Storage
-from offer_parser.twitter_ai import TwitterAnalysis, XPreview, first_status_url
+from offer_parser.twitter_ai import (
+    TwitterAIClient,
+    TwitterAIRateLimited,
+    TwitterAnalysis,
+    XPreview,
+    ai_budget_block,
+    first_status_url,
+)
 from offer_parser.twitter_evidence import extract_telegram_performance_evidence
 from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche, is_sport
 from offer_parser.twitter_priority import TwitterPrioritySource
@@ -452,6 +460,109 @@ class PipelineTests(StorageCase):
         broken.get_sender = AsyncMock(side_effect=ValueError("boom"))
         await pipeline.handle(broken)
         self.assertEqual(self.statuses(), [("error", "ValueError")])
+
+
+class AIBudgetTests(unittest.TestCase):
+    def block(self, calls, hour, priority=False):
+        return ai_budget_block(
+            calls_today=calls, budget=680,
+            now_utc=datetime(2026, 11, 1, hour, 0, tzinfo=timezone.utc), priority_source=priority,
+        )
+
+    def test_quota_is_spread_across_the_day(self):
+        self.assertIsNone(self.block(0, 0))
+        self.assertEqual(self.block(100, 1), "ai_pacing")
+        self.assertIsNone(self.block(300, 12))
+        self.assertEqual(self.block(400, 12), "ai_pacing")
+
+    def test_priority_source_ignores_pacing_but_not_the_cap(self):
+        self.assertIsNone(self.block(400, 12, priority=True))
+        self.assertEqual(self.block(680, 23, priority=True), "ai_budget")
+
+    def test_rate_limit_is_not_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / ".env"
+            env.write_text("OPENROUTER_API_KEY=test\n", encoding="utf-8")
+            client = TwitterAIClient(env, 7)
+            error = urllib.error.HTTPError("https://x", 429, "Too Many", {}, None)
+            with patch("offer_parser.twitter_ai.urllib.request.urlopen", side_effect=error) as call:
+                with self.assertRaises(TwitterAIRateLimited):
+                    client._request(XPreview(URL, "t", "d"))
+            self.assertEqual(call.call_count, 1)
+
+
+class AIFilterTests(StorageCase):
+    def pipeline(self, ai, chat_title: str = "Chat") -> MessagePipeline:
+        matcher = SimpleNamespace(evaluate=lambda text: SimpleNamespace(score=8, matched=(), compensation=()))
+        return MessagePipeline(
+            settings=settings(),
+            selected_by_id={},
+            matcher=matcher,
+            storage=self.storage,
+            knowledge_by_id={-100: chat_title},
+            knowledge_matcher=matcher,
+            knowledge_storage=self.storage,
+            twitter_priority_by_id={-100: TwitterPrioritySource(-100, chat_title, "P0", 2)},
+            twitter_ai=ai,
+            twitter_strength=None,
+        )
+
+    def statuses(self) -> list[tuple[str, str]]:
+        rows = self.storage.connection.execute("SELECT decision, reason FROM audit_decisions").fetchall()
+        return [(row["decision"], row["reason"]) for row in rows]
+
+    def seed_author(self, author: str, amount: int) -> None:
+        for index in range(amount):
+            self.storage.save_twitter_analysis(
+                canonical_url=f"https://x.com/{author}/status/{100 + index}", chat_id=-1,
+                message_id=100 + index, chat_title="X", decision="reject", ai_score=3,
+                topic="t", risk_flags=(), analysis={},
+            )
+
+    def ai(self) -> SimpleNamespace:
+        return SimpleNamespace(analyze=AsyncMock(return_value=analysis(keep=False)))
+
+    async def test_engagement_noise_spends_no_quota_and_url_stays_retryable(self):
+        ai = self.ai()
+        await self.pipeline(ai).handle(event(f"лайк комм {URL}", webpage=WEBPAGE))
+        ai.analyze.assert_not_awaited()
+        self.assertEqual(self.statuses(), [("ignored", "engagement_noise")])
+        self.assertFalse(self.storage.twitter_url_seen(URL))
+
+    async def test_third_post_of_author_is_skipped(self):
+        self.seed_author("Author", 2)
+        ai = self.ai()
+        await self.pipeline(ai).handle(event(URL, webpage=WEBPAGE))
+        ai.analyze.assert_not_awaited()
+        self.assertEqual(self.statuses(), [("ignored", "author_daily_limit")])
+
+    async def test_second_post_of_author_is_analysed(self):
+        self.seed_author("author", 1)
+        ai = self.ai()
+        await self.pipeline(ai).handle(event(URL, webpage=WEBPAGE))
+        ai.analyze.assert_awaited_once()
+
+    async def test_reference_account_has_no_author_limit(self):
+        self.seed_author("framexin", 5)
+        ai = self.ai()
+        await self.pipeline(ai).handle(event("https://x.com/framexin/status/5", webpage=WEBPAGE))
+        ai.analyze.assert_awaited_once()
+
+    async def test_priority_chat_has_no_filters(self):
+        self.seed_author("author", 5)
+        ai = self.ai()
+        await self.pipeline(ai, "X FAMILY").handle(event(f"лайк комм {URL}", webpage=WEBPAGE))
+        ai.analyze.assert_awaited_once()
+
+    async def test_rate_limit_pauses_further_requests(self):
+        ai = SimpleNamespace(analyze=AsyncMock(side_effect=TwitterAIRateLimited("429")))
+        pipeline = self.pipeline(ai)
+        await pipeline.handle(event(URL, message_id=1, webpage=WEBPAGE))
+        await pipeline.handle(event("https://x.com/other/status/2", message_id=2, webpage=WEBPAGE))
+        self.assertEqual(ai.analyze.await_count, 1)
+        self.assertIn(("error", "ai_rate_limited"), self.statuses())
+        self.assertIn(("ignored", "ai_cooldown"), self.statuses())
+        self.assertFalse(self.storage.twitter_url_seen(URL))
 
 
 class StatusUrlTests(unittest.TestCase):

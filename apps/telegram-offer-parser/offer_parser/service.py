@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
+import time
 from contextlib import suppress
-from datetime import timezone
+from datetime import datetime, timezone
 
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
@@ -20,16 +23,20 @@ from .twitter_priority import TwitterPrioritySource, load_twitter_priority_sourc
 from .vacancy_filter import evaluate_vacancy, is_vacancy_text
 from .twitter_ai import (
     TwitterAIClient,
+    TwitterAIRateLimited,
     TwitterAnalysis,
     XPreview,
+    ai_budget_block,
     extract_x_preview,
     first_status_url,
     format_twitter_intelligence,
 )
 from .twitter_strength import XCollectorClient, decide_strength
 from .twitter_evidence import extract_telegram_performance_evidence
-from .twitter_niches import classify_twitter_niche, is_sport
+from .twitter_niches import REFERENCE_ACCOUNT_NICHES, classify_twitter_niche, is_sport
 from .knowledge_balance import (
+    ENGAGEMENT_NOISE,
+    PRIORITY_X,
     KnowledgeBalanceDecision,
     evaluate_knowledge_balance,
 )
@@ -37,6 +44,9 @@ from .digest_guard import is_knowledge_noise
 
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_AI_DAILY_BUDGET = 680
+AUTHOR_DAILY_AI_LIMIT = 2
+RATE_LIMIT_PAUSE_SECONDS = 900
 
 
 def make_client(settings: Settings) -> TelegramClient:
@@ -219,6 +229,8 @@ class MessagePipeline:
         self._llm_gate = asyncio.Semaphore(self.LLM_CONCURRENCY)
         self._twitter_lock = asyncio.Lock()
         self._knowledge_lock = asyncio.Lock()
+        self._ai_budget = int(os.getenv("TWITTER_AI_DAILY_BUDGET", str(DEFAULT_AI_DAILY_BUDGET)))
+        self._ai_paused_until = 0.0
 
     async def handle(self, event) -> None:
         text = event.raw_text.strip()
@@ -285,11 +297,38 @@ class MessagePipeline:
             decision=decision, reason=reason, score=score, text=text,
         )
 
+    def _ai_skip_reason(self, text: str, url: str, chat_title: str) -> str | None:
+        """Decide without spending quota; a skipped URL stays unseen and can retry on its next mention."""
+        title = chat_title.casefold()
+        priority_source = any(name in title for name in PRIORITY_X)
+        author = url.split("/")[3].casefold()
+        if not priority_source:
+            normalized = " ".join(text.casefold().split())
+            if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in ENGAGEMENT_NOISE):
+                return "engagement_noise"
+            if (
+                author not in REFERENCE_ACCOUNT_NICHES
+                and self.knowledge_storage.twitter_ai_calls_today(author) >= AUTHOR_DAILY_AI_LIMIT
+            ):
+                return "author_daily_limit"
+        if time.monotonic() < self._ai_paused_until:
+            return "ai_cooldown"
+        return ai_budget_block(
+            calls_today=self.knowledge_storage.twitter_ai_calls_today(),
+            budget=self._ai_budget,
+            now_utc=datetime.now(timezone.utc),
+            priority_source=priority_source,
+        )
+
     async def _handle_twitter(self, event, text: str, url: str, priority: TwitterPrioritySource) -> bool:
         """Return True when the message was consumed by the X stream."""
         storage = self.knowledge_storage
         if url in self._in_flight or storage.twitter_url_seen(url):
             self._record_knowledge(event, "twitter", "duplicate", "canonical_url", None, text)
+            return True
+        skip_reason = self._ai_skip_reason(text, url, self.knowledge_by_id[event.chat_id])
+        if skip_reason:
+            self._record_knowledge(event, "twitter", "ignored", skip_reason, None, text)
             return True
         self._in_flight.add(url)
         try:
@@ -320,6 +359,11 @@ class MessagePipeline:
         try:
             async with self._llm_gate:
                 analysis = await self.twitter_ai.analyze(preview, text)
+        except TwitterAIRateLimited:
+            self._ai_paused_until = time.monotonic() + RATE_LIMIT_PAUSE_SECONDS
+            LOGGER.warning("OpenRouter вернул 429: пауза запросов на %s с", RATE_LIMIT_PAUSE_SECONDS)
+            self._record_knowledge(event, "twitter", "error", "ai_rate_limited", None, text)
+            return
         except Exception as exc:
             # The URL stays unseen, so the next mention of this post gets a new attempt.
             LOGGER.warning("Twitter AI не ответил %s: %s", url, exc)
