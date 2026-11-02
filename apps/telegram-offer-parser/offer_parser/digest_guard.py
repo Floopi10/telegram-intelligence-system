@@ -71,7 +71,7 @@ def is_digest_worthy_knowledge(item: dict) -> bool:
         return True
     title = " ".join(str(item.get("chat_title") or "").casefold().split())
     trusted_source = any(source in title for source in TRUSTED_LOW_SCORE_SOURCES)
-    return trusted_source or int(score) >= 4
+    return int(score) >= (1 if trusted_source else 4)
 
 
 def split_digest_rows(rows: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
