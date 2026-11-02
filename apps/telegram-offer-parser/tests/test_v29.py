@@ -111,6 +111,7 @@ class QualityV29Tests(unittest.TestCase):
         }
         self.assertFalse(is_digest_worthy_knowledge(generic))
         self.assertTrue(is_digest_worthy_knowledge(alpha))
+        self.assertFalse(is_digest_worthy_knowledge({**alpha, "score": 0}))
 
     def test_unpaid_moderator_vacancy_never_leaks_into_knowledge(self):
         text = (
