@@ -25,6 +25,7 @@ PARSER_DIR = Path(os.environ.get("PARSER_PROJECT", "/home/fluixoo/telegram-offer
 if str(PARSER_DIR) not in sys.path:
     sys.path.insert(0, str(PARSER_DIR))
 
+from offer_parser.digest import _quality_tier as quality_tier  # noqa: E402
 from offer_parser.knowledge_balance import classify_niches  # noqa: E402
 from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche  # noqa: E402
 from offer_parser.vacancy_filter import evaluate_vacancy, is_vacancy_text  # noqa: E402
@@ -199,11 +200,18 @@ def load_dashboard() -> dict:
         twitter_rows = db.execute(
             """SELECT canonical_url, author, chat_title, content_score,
             collected_at, published_at, views, likes, reposts, replies, bookmarks,
-            views_per_hour, strength_kind, strength_reason, analysis_json
-            FROM twitter_strength_candidates WHERE decision='keep'
-            ORDER BY collected_at DESC LIMIT 100"""
+            views_per_hour, signal_rate, velocity_percentile, signal_percentile,
+            decision AS strength_decision, strength_kind, strength_reason, analysis_json
+            FROM twitter_strength_candidates WHERE created_at >= datetime('now', '-7 days')
+            ORDER BY collected_at DESC LIMIT 500"""
         ).fetchall()
-        twitter = [_twitter_item(row) for row in twitter_rows]
+        # Same metric gate as the daily digest: an AI score alone never puts a post in the radar.
+        twitter = []
+        for row in twitter_rows:
+            tier = quality_tier(dict(row))
+            if tier is not None:
+                twitter.append({**_twitter_item(row), "tier": tier})
+        twitter = twitter[:100]
         hidden = hidden_ids()
         vacancies = [item for item in vacancies if item["id"] not in hidden]
         knowledge = [item for item in knowledge if item["id"] not in hidden]

@@ -134,6 +134,32 @@ class HiddenTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.post(["tg:-100:1"])).status, 400)
         self.assertEqual(len(self.knowledge_ids()), 2)
 
+    def test_radar_uses_the_digest_metric_gate(self):
+        from datetime import datetime, timezone
+        from types import SimpleNamespace
+
+        from offer_parser.storage import Storage
+
+        storage = Storage(app.DB_PATH)
+        now = datetime.now(timezone.utc)
+        for author, views, likes, bookmarks, kind in (
+            ("tiny", 9, 1, 1_000_000_000, "полезная механика"),
+            ("viral", 20_000, 900, 300, "подтверждённый победитель"),
+        ):
+            storage.save_twitter_strength(
+                canonical_url=f"https://x.com/{author}/status/1", author=author, chat_id=-1, message_id=1,
+                chat_title="X", content_score=9,
+                metrics=SimpleNamespace(published_at=now, collected_at=now, age_bucket="6_to_30h", age_hours=10,
+                    views=views, likes=likes, reposts=5, replies=2, bookmarks=bookmarks,
+                    views_per_hour=views / 10, signal_rate=0.05),
+                strength=SimpleNamespace(kind=kind, reason_ru="r", baseline_scope="cohort", baseline_size=30,
+                    velocity_percentile=0.9, signal_percentile=0.9),
+                decision="keep", analysis={"hook": author, "niche": "AI"},
+            )
+        storage.close()
+        twitter = app.load_dashboard()["twitter"]
+        self.assertEqual([(item["author"], item["tier"]) for item in twitter], [("viral", "winner")])
+
     def test_x_ids_are_accepted(self):
         self.assertTrue(app.ITEM_ID_RE.fullmatch("x:https://x.com/Some_User/status/2116898898019020879"))
         self.assertFalse(app.ITEM_ID_RE.fullmatch("x:https://evil.com/a/status/1"))

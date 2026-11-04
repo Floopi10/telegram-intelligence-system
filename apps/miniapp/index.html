@@ -234,7 +234,7 @@ const EMPTY={
   twitter:['Сильных X-постов нет','Посты попадают сюда после проверки метриками.'],
   knowledge:['Knowledge пуст','Здесь появятся материалы без промо и мусора.']
 };
-const TIER={'подтверждённый победитель':'залетел','ранний кандидат':'ранний сигнал','полезная механика':'механика'};
+const TIER={winner:'залетел',early:'ранний сигнал',mechanic:'механика'};
 
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl=v=>{try{const u=new URL(v);return u.protocol==='https:'?u.href:''}catch(e){return ''}};
@@ -320,7 +320,7 @@ function xRow(x){
   if(m.likes!=null)parts.push(`<span>${icon('i-heart')}<b class="num">${fmt(m.likes)}</b></span>`);
   if(m.reposts!=null)parts.push(`<span>${icon('i-repost')}<b class="num">${fmt(m.reposts)}</b></span>`);
   if(m.views_per_hour!=null)parts.push(`<span>${icon('i-bolt')}<b class="num">${fmt(m.views_per_hour)}</b>/ч</span>`);
-  const tier=TIER[x.strength];if(tier)parts.push(`<span class="tier">${tier}</span>`);
+  const tier=TIER[x.tier];if(tier)parts.push(`<span class="tier">${tier}</span>`);
   return parts.length?`<div class="xrow">${parts.join('')}</div>`:'';
 }
 
