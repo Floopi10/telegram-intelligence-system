@@ -49,6 +49,8 @@ jobs:
           apps/obsidian-bot/parser.py
           apps/obsidian-bot/vault.py
           apps/obsidian-bot/ui.py
+          apps/obsidian-bot/related.py
+          apps/obsidian-bot/x_enrich.py
           apps/miniapp/app.py
           services/x-collector/x_service.py
 
