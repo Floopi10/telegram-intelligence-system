@@ -29,7 +29,10 @@ from offer_parser.knowledge_balance import classify_niches  # noqa: E402
 from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche  # noqa: E402
 from offer_parser.vacancy_filter import evaluate_vacancy, is_vacancy_text  # noqa: E402
 
-VERSION = "2.6"
+VERSION = "2.7"
+# Viewer decisions live apart from the parser database, which this app opens read-only.
+STATE_DB = Path(os.environ.get("MINI_APP_STATE_DB", str(BASE_DIR / "data" / "state.db")))
+ITEM_ID_RE = re.compile(r"(?:tg:-?\d{1,20}:\d{1,12}|x:https://x\.com/[A-Za-z0-9_]{1,15}/status/\d{1,25})")
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 ALLOWED_USERS = {
@@ -201,6 +204,10 @@ def load_dashboard() -> dict:
             ORDER BY collected_at DESC LIMIT 100"""
         ).fetchall()
         twitter = [_twitter_item(row) for row in twitter_rows]
+        hidden = hidden_ids()
+        vacancies = [item for item in vacancies if item["id"] not in hidden]
+        knowledge = [item for item in knowledge if item["id"] not in hidden]
+        twitter = [item for item in twitter if item["id"] not in hidden]
 
         decisions = {
             str(row["decision"]): int(row["amount"])
@@ -248,8 +255,32 @@ def load_dashboard() -> dict:
             "knowledge": knowledge[:140],
             "niches": niches,
             "top_sources": top_sources,
+            "hidden_count": len(hidden),
             "updated_at": int(time.time()),
         }
+
+
+def _state() -> sqlite3.Connection:
+    STATE_DB.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(STATE_DB, timeout=10)
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS hidden (item_id TEXT PRIMARY KEY, hidden_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    )
+    return db
+
+
+def hidden_ids() -> set[str]:
+    with closing(_state()) as db:
+        return {row[0] for row in db.execute("SELECT item_id FROM hidden")}
+
+
+def set_hidden(item_id: str, hidden: bool) -> None:
+    with closing(_state()) as db:
+        if hidden:
+            db.execute("INSERT OR IGNORE INTO hidden (item_id) VALUES (?)", (item_id,))
+        else:
+            db.execute("DELETE FROM hidden WHERE item_id = ?", (item_id,))
+        db.commit()
 
 
 async def index(_: web.Request) -> web.FileResponse:
@@ -270,6 +301,25 @@ async def dashboard(request: web.Request) -> web.Response:
     return web.json_response(payload, headers={"Cache-Control": "no-store"})
 
 
+async def hide(request: web.Request) -> web.Response:
+    try:
+        validate_init_data(request.headers.get("X-Telegram-Init-Data", ""))
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        return web.json_response({"error": str(error)}, status=401)
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return web.json_response({"error": "invalid_body"}, status=400)
+    item_id = str(body.get("id") or "") if isinstance(body, dict) else ""
+    if not ITEM_ID_RE.fullmatch(item_id):
+        return web.json_response({"error": "invalid_id"}, status=400)
+    try:
+        set_hidden(item_id, bool(body.get("hidden", True)))
+    except (sqlite3.Error, OSError) as error:
+        return web.json_response({"error": "state_unavailable", "detail": str(error)}, status=503)
+    return web.json_response({"ok": True})
+
+
 async def health(_: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "db": DB_PATH.exists(), "version": VERSION})
 
@@ -278,6 +328,7 @@ def create_app() -> web.Application:
     app = web.Application(client_max_size=1024 * 1024)
     app.router.add_get("/", index)
     app.router.add_get("/api/dashboard", dashboard)
+    app.router.add_post("/api/hide", hide)
     app.router.add_get("/health", health)
     return app
 
