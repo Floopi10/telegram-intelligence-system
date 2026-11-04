@@ -56,6 +56,7 @@ class Settings:
     webhook_path: str = "/telegram-webhook"
     webhook_base_url: str = ""
     webhook_secret: str = ""
+    x_collector_env_file: str = ""
 
     @property
     def inbox_path(self) -> Path:
@@ -108,4 +109,5 @@ def load_settings() -> Settings:
         webhook_path=os.getenv("WEBHOOK_PATH", "/telegram-webhook").strip() or "/telegram-webhook",
         webhook_base_url=os.getenv("WEBHOOK_BASE_URL", "").strip().rstrip("/"),
         webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
+        x_collector_env_file=os.getenv("X_COLLECTOR_ENV_FILE", "").strip(),
     )

@@ -85,6 +85,7 @@ def saved_card(
     note_path: Path,
     inbox_path: Path,
     route: str,
+    x_metrics: Optional[dict] = None,
 ) -> str:
     """route: 'machine', 'ai' or 'fallback'."""
     unique_tags = list(dict.fromkeys(tag for tag in tags if tag))
@@ -111,12 +112,49 @@ def saved_card(
     if summary.strip():
         lines.append(f"<blockquote expandable>{escape(summary.strip())}</blockquote>")
     lines.append(" · ".join(meta))
+    metrics_line = x_metrics_line(x_metrics)
+    if metrics_line:
+        lines.append(metrics_line)
     if tag_line:
         lines.append(tag_line)
     lines.append(f"<code>{escape(_relative_note_path(note_path, inbox_path))}</code>")
     if route == "fallback":
         lines.extend(["", "<i>Категория «Другое». Проверь OPENROUTER_API_KEY и логи бота.</i>"])
     return "\n".join(lines)
+
+
+def _count(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
+def x_metrics_line(metrics: Optional[dict]) -> str:
+    if not metrics:
+        return ""
+    parts = [
+        f"{icon} {_count(metrics[key])}"
+        for key, icon in (("views", "👁"), ("likes", "♥"), ("reposts", "↻"), ("bookmarks", "🔖"))
+        if metrics.get(key) is not None
+    ]
+    return "𝕏 " + " · ".join(parts) if parts else ""
+
+
+def fetching_x_text() -> str:
+    return "⏳ <b>Разбираю пост</b>\n<i>подтягиваю текст и метрики из X…</i>"
+
+
+def category_picker_text(title: str) -> str:
+    return f"📁 <b>Куда перенести?</b>\n<i>{escape(title)}</i>"
+
+
+def delete_confirm_text(title: str) -> str:
+    return (
+        f"🗑 <b>Удалить заметку?</b>\n<i>{escape(title)}</i>\n\n"
+        "Она переедет в корзину Obsidian (.trash), её можно будет вернуть."
+    )
+
+
+def deleted_text(title: str) -> str:
+    return f"🗑 <b>Заметка в корзине</b>\n<i>{escape(title)}</i>\nВернуть можно из папки .trash в Obsidian."
 
 
 def failure_text() -> str:

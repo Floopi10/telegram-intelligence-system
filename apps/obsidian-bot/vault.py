@@ -14,6 +14,7 @@ from slugify import slugify
 from config import Settings
 from llm import StructuredPost
 from parser import ParsedPost
+from related import existing_note_names, find_related, index_notes, rebuild_links
 
 log = logging.getLogger(__name__)
 
@@ -146,7 +147,8 @@ class Vault:
         body_parts: List[str] = [frontmatter, "", f"# {structured.title}", ""]
 
         if structured.body_md:
-            body_parts.append(_merge_sources(structured.body_md, parsed.urls))
+            body = _merge_sources(structured.body_md, parsed.urls)
+            body_parts.append(self._with_related_links(body, structured.title, all_tags))
             body_parts.append("")
 
         if media_paths:
@@ -156,9 +158,6 @@ class Vault:
                 body_parts.append(f"![[{rel}]]")
             body_parts.append("")
 
-
-
-
         filename = f"{_safe_filename(structured.title)}.md"
         target = self._unique_path(category_dir / filename)
 
@@ -166,6 +165,36 @@ class Vault:
             await f.write("\n".join(body_parts))
 
         log.info("Saved note: %s", target)
+        return target
+
+    def _with_related_links(self, body: str, title: str, tags: List[str]) -> str:
+        try:
+            notes = index_notes(self._s.inbox_path, self._s.attachments_folder)
+            related = find_related(title, tags, notes)
+            return rebuild_links(body, related, existing_note_names(self._s.vault_path))
+        except Exception:
+            log.exception("Связи не подобраны, заметка сохранена без них")
+            return body
+
+    def move_note(self, note_path: Path, category: str) -> Path:
+        """Move a note to another category folder; attachments keep working because folders share a depth."""
+        target_dir = self._s.category_path(category)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        text = note_path.read_text(encoding="utf-8")
+        text = re.sub(r"(?m)^category: .*$", f"category: {_yaml_str(category)}", text, count=1)
+        target = self._unique_path(target_dir / note_path.name)
+        target.write_text(text, encoding="utf-8")
+        note_path.unlink()
+        log.info("Moved note: %s -> %s", note_path, target)
+        return target
+
+    def trash_note(self, note_path: Path) -> Path:
+        """Move a note to Obsidian's own .trash folder so it can still be restored."""
+        trash = self._s.vault_path / ".trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        target = self._unique_path(trash / note_path.name)
+        note_path.rename(target)
+        log.info("Trashed note: %s -> %s", note_path, target)
         return target
 
     # ---------- helpers ----------

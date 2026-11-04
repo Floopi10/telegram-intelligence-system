@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
+import secrets
+from collections import OrderedDict, defaultdict
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,7 +15,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.filters import CommandStart, Command
-from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BotCommand,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -22,8 +30,13 @@ from llm import LLM
 from machine_note import structure_machine_message
 from parser import parse_post
 from ui import (
+    category_icon,
+    category_picker_text,
     collect_note_stats,
+    deleted_text,
+    delete_confirm_text,
     failure_text,
+    fetching_x_text,
     help_text,
     progress_text,
     saved_card,
@@ -31,6 +44,7 @@ from ui import (
     welcome_text,
 )
 from vault import Vault
+from x_enrich import XCollector, enriched_text, first_status_url
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +57,75 @@ log = logging.getLogger("obsidian-bot")
 _album_buffer: Dict[str, List[Tuple[Message, Optional[bytes], Optional[str]]]] = defaultdict(list)
 _album_tasks: Dict[str, asyncio.Task] = {}
 ALBUM_DEBOUNCE = 2.0
+MAX_CARDS = 300
+
+
+@dataclass
+class CardState:
+    """What a saved card shows; kept in memory so its buttons can act on the note."""
+    note_path: Path
+    title: str
+    summary: str
+    category: str
+    tags: List[str]
+    media_count: int
+    route: str
+    source_url: Optional[str]
+    x_metrics: Optional[dict] = field(default=None)
+
+
+_cards: "OrderedDict[str, CardState]" = OrderedDict()
+
+
+def _remember_card(card: CardState) -> str:
+    token = secrets.token_hex(5)
+    _cards[token] = card
+    while len(_cards) > MAX_CARDS:
+        _cards.popitem(last=False)
+    return token
+
+
+def _card_text(card: CardState, inbox_path: Path) -> str:
+    return saved_card(
+        title=card.title,
+        summary=card.summary,
+        category=card.category,
+        tags=card.tags,
+        media_count=card.media_count,
+        note_path=card.note_path,
+        inbox_path=inbox_path,
+        route=card.route,
+        x_metrics=card.x_metrics,
+    )
+
+
+def _card_keyboard(token: str, card: CardState) -> InlineKeyboardMarkup:
+    rows = []
+    if card.source_url:
+        rows.append([InlineKeyboardButton(text="🔗 Источник", url=card.source_url)])
+    rows.append([
+        InlineKeyboardButton(text="📁 Категория", callback_data=f"cat:{token}"),
+        InlineKeyboardButton(text="🗑 Удалить", callback_data=f"del:{token}"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _category_keyboard(token: str, categories: List[str], current: str) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(text=f"{category_icon(name)} {name}", callback_data=f"mv:{token}:{index}")
+        for index, name in enumerate(categories)
+        if name != current
+    ]
+    rows = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton(text="← Назад", callback_data=f"back:{token}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _delete_keyboard(token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Да, удалить", callback_data=f"rm:{token}"),
+        InlineKeyboardButton(text="← Отмена", callback_data=f"back:{token}"),
+    ]])
 
 
 def _is_allowed(settings: Settings, message: Message) -> bool:
@@ -135,8 +218,60 @@ async def on_stats(message: Message, settings: Settings) -> None:
     await message.answer(stats_text(_note_stats(settings)))
 
 
+async def on_card_action(callback: CallbackQuery, settings: Settings, vault: Vault) -> None:
+    user = callback.from_user
+    if user is None or user.id not in settings.allowed_user_ids:
+        await callback.answer()
+        return
+    action, _, rest = (callback.data or "").partition(":")
+    token, _, argument = rest.partition(":")
+    card = _cards.get(token)
+    if card is None or callback.message is None:
+        await callback.answer("Кнопка устарела: бот перезапускался после сохранения.", show_alert=True)
+        return
+    if not card.note_path.exists() and action in {"cat", "mv", "del", "rm"}:
+        await callback.answer("Заметки уже нет на месте: её перенесли или удалили в Obsidian.", show_alert=True)
+        return
+
+    if action == "cat":
+        await callback.message.edit_text(
+            category_picker_text(card.title),
+            reply_markup=_category_keyboard(token, settings.categories, card.category),
+        )
+    elif action == "mv":
+        try:
+            category = settings.categories[int(argument)]
+        except (ValueError, IndexError):
+            await callback.answer()
+            return
+        moved = replace(card, note_path=vault.move_note(card.note_path, category), category=category)
+        _cards[token] = moved
+        await callback.message.edit_text(
+            _card_text(moved, settings.inbox_path),
+            reply_markup=_card_keyboard(token, moved),
+            disable_web_page_preview=True,
+        )
+        await callback.answer(f"Перенесено в «{category}»")
+        return
+    elif action == "del":
+        await callback.message.edit_text(delete_confirm_text(card.title), reply_markup=_delete_keyboard(token))
+    elif action == "rm":
+        vault.trash_note(card.note_path)
+        _cards.pop(token, None)
+        await callback.message.edit_text(deleted_text(card.title))
+        await callback.answer("Удалено")
+        return
+    elif action == "back":
+        await callback.message.edit_text(
+            _card_text(card, settings.inbox_path),
+            reply_markup=_card_keyboard(token, card),
+            disable_web_page_preview=True,
+        )
+    await callback.answer()
+
+
 async def on_album_part(
-    message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot
+    message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot, xcollector: XCollector
 ) -> None:
     """Альбом из нескольких медиа приходит несколькими апдейтами с одним media_group_id."""
     if not _is_allowed(settings, message):
@@ -160,12 +295,12 @@ async def on_album_part(
     if mg_id in _album_tasks:
         _album_tasks[mg_id].cancel()
     _album_tasks[mg_id] = asyncio.create_task(
-        _flush_album_after(mg_id, settings, llm, vault)
+        _flush_album_after(mg_id, settings, llm, vault, xcollector)
     )
 
 
 async def _flush_album_after(
-    mg_id: str, settings: Settings, llm: LLM, vault: Vault
+    mg_id: str, settings: Settings, llm: LLM, vault: Vault, xcollector: XCollector
 ) -> None:
     try:
         await asyncio.sleep(ALBUM_DEBOUNCE)
@@ -197,11 +332,12 @@ async def _flush_album_after(
         llm=llm,
         vault=vault,
         inbox_path=settings.inbox_path,
+        xcollector=xcollector,
     )
 
 
 async def on_single_message(
-    message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot
+    message: Message, settings: Settings, llm: LLM, vault: Vault, bot: Bot, xcollector: XCollector
 ) -> None:
     """Одиночное сообщение (не альбом)."""
     if not _is_allowed(settings, message):
@@ -231,6 +367,7 @@ async def on_single_message(
         llm=llm,
         vault=vault,
         inbox_path=settings.inbox_path,
+        xcollector=xcollector,
     )
 
 
@@ -242,10 +379,11 @@ async def _process_post(
     llm: LLM,
     vault: Vault,
     inbox_path: Path,
+    xcollector: XCollector,
 ) -> None:
     status = await message.answer(progress_text(text, len(media_paths)))
     try:
-        await _save_post(status, message, text, media_paths, llm, vault, inbox_path)
+        await _save_post(status, message, text, media_paths, llm, vault, inbox_path, xcollector)
     except Exception:
         log.exception("Заметка не сохранена: message_id=%s", message.message_id)
         await status.edit_text(failure_text())
@@ -259,6 +397,7 @@ async def _save_post(
     llm: LLM,
     vault: Vault,
     inbox_path: Path,
+    xcollector: XCollector,
 ) -> None:
     parsed = parse_post(text)
 
@@ -269,6 +408,14 @@ async def _save_post(
 
     structured = structure_machine_message(raw_for_llm)
     machine_routed = structured is not None
+    x_metrics = None
+    x_url = None if machine_routed else first_status_url(text)
+    if x_url and xcollector.enabled:
+        await status.edit_text(fetching_x_text())
+        post = await xcollector.fetch(x_url)
+        if post is not None:
+            raw_for_llm = enriched_text(raw_for_llm, post)
+            x_metrics = post.metrics
     if structured is None:
         structured = await llm.structure(raw_for_llm)
         log.info("processing_route=ai message_id=%s", message.message_id)
@@ -284,26 +431,23 @@ async def _save_post(
         author=_author_name(message),
     )
 
-    route = "machine" if machine_routed else "fallback" if structured.fallback else "ai"
-    source_url = _source_url(message) or next(
-        (url for url in parsed.urls if url.startswith("https://")), None
-    )
-    keyboard = (
-        InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔗 Источник", url=source_url)]])
-        if source_url else None
-    )
-    await status.edit_text(
-        saved_card(
-            title=structured.title,
-            summary=structured.summary,
-            category=structured.category,
-            tags=[*parsed.tags, *structured.suggested_tags],
-            media_count=len(media_paths),
-            note_path=note_path,
-            inbox_path=inbox_path,
-            route=route,
+    card = CardState(
+        note_path=note_path,
+        title=structured.title,
+        summary=structured.summary,
+        category=structured.category,
+        tags=[*parsed.tags, *structured.suggested_tags],
+        media_count=len(media_paths),
+        route="machine" if machine_routed else "fallback" if structured.fallback else "ai",
+        source_url=x_url or _source_url(message) or next(
+            (url for url in parsed.urls if url.startswith("https://")), None
         ),
-        reply_markup=keyboard,
+        x_metrics=x_metrics,
+    )
+    token = _remember_card(card)
+    await status.edit_text(
+        _card_text(card, inbox_path),
+        reply_markup=_card_keyboard(token, card),
         disable_web_page_preview=True,
     )
 
@@ -319,6 +463,7 @@ def build_router() -> Router:
     current.message.register(on_start, CommandStart())
     current.message.register(on_help, Command("help"))
     current.message.register(on_stats, Command("stats"))
+    current.callback_query.register(on_card_action)
     current.message.register(on_album_part, F.media_group_id)
     current.message.register(
         on_single_message,
@@ -354,6 +499,7 @@ async def main() -> None:
     dp["settings"] = settings
     dp["llm"] = llm
     dp["vault"] = vault
+    dp["xcollector"] = XCollector(settings.x_collector_env_file)
     dp.include_router(build_router())
 
     try:
@@ -365,6 +511,7 @@ async def main() -> None:
     except TelegramNetworkError:
         log.warning("Меню команд не обновлено: Telegram недоступен")
     log.info("Бот запущен. Vault: %s", settings.vault_path)
+    log.info("X-посты: %s", "подтягиваются через коллектор" if dp["xcollector"].enabled else "коллектор не настроен")
     if settings.allowed_user_ids:
         log.info("Allowed users: %s", settings.allowed_user_ids)
     else:
