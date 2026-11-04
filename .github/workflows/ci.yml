@@ -33,6 +33,12 @@ jobs:
         run: |
           pip install -r requirements.txt
           python -m unittest discover -s tests -p 'test_*.py'
+          python -c "import bot; bot.build_router()"
+      - name: Test mini app
+        working-directory: apps/miniapp
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -p 'test_*.py'
       - name: Compile remaining components
         run: >-
           python -m py_compile
@@ -42,6 +48,7 @@ jobs:
           apps/obsidian-bot/machine_note.py
           apps/obsidian-bot/parser.py
           apps/obsidian-bot/vault.py
+          apps/obsidian-bot/ui.py
           apps/miniapp/app.py
           services/x-collector/x_service.py
 
