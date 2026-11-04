@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from offer_parser.digest import NICHE_LIMITS
-from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche
+from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche, is_twitter_radar_noise
 
 
 class NewRadarNichesTest(unittest.TestCase):
@@ -25,6 +25,14 @@ class NewRadarNichesTest(unittest.TestCase):
     def test_streams(self):
         self.assertEqual(classify_twitter_niche("top twitch streamers clip farm"), "Стримы")
         self.assertEqual(classify_twitter_niche("https://x.com/ColeHayes28/status/1"), "Стримы")
+
+    def test_casino_and_poker_stories(self):
+        self.assertEqual(classify_twitter_niche("he lost everything at the casino in one night"), "Казино и ставки")
+        self.assertEqual(classify_twitter_niche("проиграл 2 млн в покер за вечер"), "Казино и ставки")
+
+    def test_casino_story_is_not_noise_but_sports_slips_are(self):
+        self.assertFalse(is_twitter_radar_noise("poker drama: betting the house on one hand"))
+        self.assertTrue(is_twitter_radar_noise("today's parlay and bet slip"))
 
     def test_physics_goes_to_math(self):
         self.assertEqual(classify_twitter_niche("физика для школьников за 5 минут"), "Математика")

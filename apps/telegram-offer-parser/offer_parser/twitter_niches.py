@@ -14,6 +14,7 @@ NICHE_ORDER = (
     "Тру-крайм",
     "18+",
     "Стримы",
+    "Казино и ставки",
     "Девушки и lifestyle",
     "Web3",
     "Технологии",
@@ -93,6 +94,12 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bon stream\b", r"\bstreaming (?:setup|clip|highlight)", r"\bclip farm",
         r"\bстрим", r"стример", r"\bтвич",
     ),
+    "Казино и ставки": (
+        r"\bcasino", r"\bpoker\b", r"gambl", r"slot machine", r"\bslots\b", r"jackpot",
+        r"roulette", r"blackjack", r"high roller", r"\bstake\.com", r"lost (?:it all|everything)",
+        r"казино", r"\bпокер", r"лудоман", r"рулетк", r"\bслот", r"джекпот", r"\bставк",
+        r"проиграл (?:всё|все|\d)",
+    ),
     "Claude + Obsidian": (
         r"claude.{0,40}obsidian", r"obsidian.{0,40}claude",
         r"second brain", r"knowledge vault", r"база знаний",
@@ -139,7 +146,7 @@ SPORT_PATTERNS = (
 )
 
 RADAR_NOISE_PATTERNS = (
-    r"\b(?:betting|sportsbook|bet slip|odds|parlay)\b",
+    r"\b(?:sportsbook|bet slip|odds|parlay)\b",
     r"\b(?:hiring|job opening|open position|apply now|vacancy)\b",
     r"\b(?:ambassador program|giveaway|airdrop campaign|referral code)\b",
     r"\b(?:dm me|join our channel|limited spots|guaranteed profit)\b",
