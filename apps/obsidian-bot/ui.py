@@ -142,6 +142,31 @@ def fetching_x_text() -> str:
     return "⏳ <b>Разбираю пост</b>\n<i>подтягиваю текст и метрики из X…</i>"
 
 
+def x_fetch_failed_text(url: str) -> str:
+    return (
+        "⚠️ <b>Не смог получить пост из X</b>\n"
+        "Заметку не сохранил: из одной ссылки вышла бы пустая.\n\n"
+        "Перешли ссылку ещё раз через пару минут или добавь к ней текст поста.\n"
+        f"<code>{escape(url)}</code>"
+    )
+
+
+CAPTURE_LABELS = {
+    "log": ("📅", "В дневник"),
+    "idea": ("💡", "В идеи"),
+    "task": ("☑️", "В задачи"),
+}
+
+
+def capture_card(kind: str, line: str, relative_path: str) -> str:
+    icon, label = CAPTURE_LABELS[kind]
+    return f"{icon} <b>{label}</b>\n<i>{escape(line)}</i>\n<code>{escape(relative_path)}</code>"
+
+
+def capture_undone_text(line: str) -> str:
+    return f"↩️ <b>Отменено</b>\n<s>{escape(line)}</s>"
+
+
 def category_picker_text(title: str) -> str:
     return f"📁 <b>Куда перенести?</b>\n<i>{escape(title)}</i>"
 
@@ -171,6 +196,10 @@ def welcome_text(note_stats: "NoteStats") -> str:
         "Пересылай сюда посты, ссылки, фото и файлы — я разберу их и положу "
         "заметку в нужную папку vault.\n\n"
         f"Сегодня сохранено: <b>{today}</b> {_plural(today, 'заметка', 'заметки', 'заметок')}\n\n"
+        "<b>Свои мысли раскладываю сам</b>\n"
+        "«оплатил Claude» → дневник в Месяца\n"
+        "«идея: …» → идеи, «надо …» → задачи\n"
+        "Пересланные посты и ссылки → заметки\n\n"
         "<b>Команды</b>\n"
         "/stats — что сохранено за неделю\n"
         "/help — категории\n\n"
