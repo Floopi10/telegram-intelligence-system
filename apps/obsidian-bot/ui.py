@@ -160,7 +160,10 @@ CAPTURE_LABELS = {
 
 def capture_card(kind: str, line: str, relative_path: str) -> str:
     icon, label = CAPTURE_LABELS[kind]
-    return f"{icon} <b>{label}</b>\n<i>{escape(line)}</i>\n<code>{escape(relative_path)}</code>"
+    return (
+        f"{icon} <b>{label}</b>\n<i>{escape(line)}</i>\n<code>{escape(relative_path)}</code>\n"
+        "<i>Попадёт в Obsidian при следующем разборе на компьютере; до него можно поправить кнопками.</i>"
+    )
 
 
 def capture_undone_text(line: str) -> str:

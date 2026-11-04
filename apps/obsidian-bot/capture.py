@@ -1,11 +1,17 @@
 """Route the owner's own short messages into the vault notes they already keep by hand."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# The server sees only the Telegram folder of the vault, so own messages wait here
+# until the computer that owns the vault merges them (see merge_queue.py).
+QUEUE_DIR = Path("Telegram") / ".bot-queue"
+FIRSAY_IDEAS = Path("02 Projects") / "Мой AI проект" / "Разное (мысли, идеи).md"
 
 MONTHS = (
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -57,15 +63,35 @@ def classify(text: str) -> Optional[Capture]:
     return None
 
 
-def target_path(vault: Path, kind: str, text: str, now: datetime) -> Path:
+def relative_target(kind: str, text: str, now: datetime) -> Path:
     if kind == "log":
-        return vault / "Месяца" / f"{MONTHS[now.month - 1]}.md"
+        return Path("Месяца") / f"{MONTHS[now.month - 1]}.md"
     if kind == "idea":
-        firsay = vault / "02 Projects" / "Мой AI проект" / "Разное (мысли, идеи).md"
-        if "firsay" in text.casefold() and firsay.exists():
-            return firsay
+        return FIRSAY_IDEAS if "firsay" in text.casefold() else Path("00 Inbox") / "Идеи.md"
+    return Path("00 Inbox") / "Задачи.md"
+
+
+def target_path(vault: Path, kind: str, text: str, now: datetime) -> Path:
+    relative = relative_target(kind, text, now)
+    if relative == FIRSAY_IDEAS and not (vault / relative).exists():
         return vault / "00 Inbox" / "Идеи.md"
-    return vault / "00 Inbox" / "Задачи.md"
+    return vault / relative
+
+
+def write_queue_entry(vault: Path, entry_id: str, kind: str, text: str, created: datetime) -> Path:
+    """One file per message: Syncthing never has to merge two writers of the same file."""
+    directory = vault / QUEUE_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{created:%Y%m%d-%H%M%S}-{entry_id}.json"
+    payload = {"id": entry_id, "kind": kind, "text": text, "created": created.isoformat()}
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+    return path
+
+
+def read_queue_entry(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def format_line(kind: str, text: str, now: datetime) -> str:
