@@ -14,6 +14,7 @@ from slugify import slugify
 from config import Settings
 from llm import StructuredPost
 from parser import ParsedPost
+from tags import clean_tags
 from related import existing_note_names, find_related, index_notes, rebuild_links
 
 log = logging.getLogger(__name__)
@@ -201,16 +202,7 @@ class Vault:
 
     @staticmethod
     def _merge_tags(*lists: Iterable[str]) -> List[str]:
-        seen = set()
-        out: List[str] = []
-        for lst in lists:
-            for t in lst:
-                norm = t.strip().lstrip("#").lower()
-                if not norm or norm in seen:
-                    continue
-                seen.add(norm)
-                out.append(norm)
-        return out
+        return clean_tags(*lists)
 
     @staticmethod
     def _unique_path(path: Path) -> Path:

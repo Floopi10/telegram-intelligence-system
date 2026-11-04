@@ -32,6 +32,7 @@ from config import Settings, load_settings
 from llm import LLM
 from machine_note import structure_machine_message
 from parser import parse_post
+from tags import clean_tags
 from ui import (
     CAPTURE_LABELS,
     capture_card,
@@ -557,7 +558,7 @@ async def _save_post(
         title=structured.title,
         summary=structured.summary,
         category=structured.category,
-        tags=[*parsed.tags, *structured.suggested_tags],
+        tags=clean_tags(parsed.tags, structured.suggested_tags),
         media_count=len(media_paths),
         route="machine" if machine_routed else "fallback" if structured.fallback else "ai",
         source_url=x_url or _source_url(message) or next(

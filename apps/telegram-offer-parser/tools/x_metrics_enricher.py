@@ -26,6 +26,15 @@ METRICS_SECTION_RE = re.compile(
     r"(?ms)^## Метрики X\s*\n.*?(?=^##\s|\Z)"
 )
 MSK = ZoneInfo("Europe/Moscow")
+TWITTER_EPOCH_MS = 1288834974657
+FRESH_AGE = timedelta(days=7)
+ALERT_AFTER_FAILURES = 3
+ALERT_TEXT = (
+    "⚠️ X перестал отдавать посты коллектору ({count} сбора подряд). "
+    "Скорее всего, X снова просит проверку: зайди в аккаунт коллектора на x-browser-vm и пройди её.\n"
+    "Последняя ошибка: {error}"
+)
+RECOVERY_TEXT = "✅ X снова отдаёт посты коллектору, сбор метрик работает."
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=2)
+    parser.add_argument(
+        "--alert-env",
+        type=Path,
+        help="Obsidian bot .env with TELEGRAM_BOT_TOKEN and ALLOWED_USER_IDS, to warn when X blocks the collector",
+    )
     return parser.parse_args()
 
 
@@ -73,6 +87,18 @@ def open_db(path: Path) -> sqlite3.Connection:
         "CREATE INDEX IF NOT EXISTS idx_snapshots_url_time "
         "ON snapshots(url, collected_at DESC)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collector_health (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            consecutive_failures INTEGER NOT NULL DEFAULT 0,
+            alerted INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    connection.execute("INSERT OR IGNORE INTO collector_health(id) VALUES (1)")
     connection.commit()
     return connection
 
@@ -107,6 +133,17 @@ def parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+def status_time(url: str) -> datetime | None:
+    """Post time decoded from the status id (X snowflake), no request needed."""
+    match = X_URL_RE.search(url)
+    if not match:
+        return None
+    status_id = int(match.group(2))
+    if status_id < 1 << 22:
+        return None
+    return datetime.fromtimestamp(((status_id >> 22) + TWITTER_EPOCH_MS) / 1000, timezone.utc)
+
+
 def latest_snapshot(db: sqlite3.Connection, url: str) -> sqlite3.Row | None:
     db.row_factory = sqlite3.Row
     return db.execute(
@@ -115,23 +152,105 @@ def latest_snapshot(db: sqlite3.Connection, url: str) -> sqlite3.Row | None:
     ).fetchone()
 
 
-def is_due(snapshot: sqlite3.Row | None, now: datetime) -> bool:
+def is_due(snapshot: sqlite3.Row | None, now: datetime, posted: datetime | None = None) -> bool:
+    """Fresh posts often, old posts once.
+
+    Up to 2 days old: every 2 hours. Up to 7 days: every 12 hours.
+    Older: one snapshot if there is none yet, then never again.
+    """
+    if snapshot is not None:
+        posted = parse_iso(snapshot["published_at"]) or posted
+    if posted is None:
+        if snapshot is None:
+            return True
+        collected = parse_iso(snapshot["collected_at"])
+        return collected is None or now - collected >= timedelta(days=7)
+    age = now - posted
+    if age > FRESH_AGE:
+        return snapshot is None
     if snapshot is None:
         return True
     collected = parse_iso(snapshot["collected_at"])
-    published = parse_iso(snapshot["published_at"])
     if collected is None:
         return True
-    if published is None:
-        return now - collected >= timedelta(days=7)
-    age = now - published
-    if age <= timedelta(days=2):
-        interval = timedelta(hours=2)
-    elif age <= timedelta(days=7):
-        interval = timedelta(hours=12)
-    else:
-        return False
+    interval = timedelta(hours=2) if age <= timedelta(days=2) else timedelta(hours=12)
     return now - collected >= interval
+
+
+def priority(posted: datetime | None, now: datetime, mtime: float) -> tuple[int, float]:
+    """Fresh posts first, newest first; old or undated posts after them."""
+    if posted is not None and now - posted <= FRESH_AGE:
+        return (0, (now - posted).total_seconds())
+    return (1, -mtime)
+
+
+def is_collector_failure(error: BaseException) -> bool:
+    """True when X or the collector failed, not the note or the database."""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500
+    return isinstance(error, (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError))
+
+
+def load_alert_target(path: Path | None) -> tuple[str, str] | None:
+    if path is None:
+        return None
+    try:
+        values = load_env(path)
+    except OSError:
+        print("ALERT_DISABLED=alert_env_unreadable", file=sys.stderr)
+        return None
+    token = values.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = values.get("ALLOWED_USER_IDS", "").replace(";", ",").split(",")[0].strip()
+    if not token or not chat_id:
+        print("ALERT_DISABLED=alert_env_incomplete", file=sys.stderr)
+        return None
+    return token, chat_id
+
+
+def send_alert(target: tuple[str, str] | None, text: str) -> bool:
+    if target is None:
+        return False
+    token, chat_id = target
+    payload = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return 200 <= response.status < 300
+    except (OSError, ValueError) as error:
+        # Never print the error itself: the request URL holds the bot token.
+        print(f"ALERT_FAILED={type(error).__name__}", file=sys.stderr)
+        return False
+
+
+def record_health(
+    db: sqlite3.Connection,
+    target: tuple[str, str] | None,
+    ok: bool,
+    error: str = "",
+) -> None:
+    db.row_factory = sqlite3.Row
+    row = db.execute("SELECT * FROM collector_health WHERE id = 1").fetchone()
+    failures, alerted = int(row["consecutive_failures"]), bool(row["alerted"])
+    if ok:
+        if alerted and send_alert(target, RECOVERY_TEXT):
+            print("ALERT=recovered")
+        failures, alerted = 0, False
+    else:
+        failures += 1
+        if failures >= ALERT_AFTER_FAILURES and not alerted:
+            alerted = send_alert(target, ALERT_TEXT.format(count=failures, error=error[:200]))
+            if alerted:
+                print("ALERT=collector_blocked")
+    db.execute(
+        "UPDATE collector_health SET consecutive_failures=?, alerted=?, last_error=?, updated_at=? WHERE id = 1",
+        (failures, int(alerted), error[:500] or None, datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
 
 
 def request_metrics(base_url: str, token: str, url: str) -> dict[str, object]:
@@ -231,8 +350,9 @@ def main() -> int:
         return 2
 
     db = open_db(args.db)
+    alert_target = load_alert_target(args.alert_env)
     now = datetime.now(timezone.utc)
-    candidates: list[tuple[float, Path, str, str, int, sqlite3.Row | None]] = []
+    candidates: list[tuple[tuple[int, float], Path, str, str, int, sqlite3.Row | None]] = []
 
     for path in args.vault.rglob("*.md"):
         try:
@@ -245,8 +365,11 @@ def main() -> int:
             continue
         url = f"https://x.com/{match.group(1)}/status/{match.group(2)}"
         snapshot = latest_snapshot(db, url)
-        if is_due(snapshot, now):
-            candidates.append((-stat.st_mtime, path, text, url, stat.st_mtime_ns, snapshot))
+        posted = (parse_iso(snapshot["published_at"]) if snapshot is not None else None) or status_time(url)
+        if is_due(snapshot, now, posted):
+            candidates.append(
+                (priority(posted, now, stat.st_mtime), path, text, url, stat.st_mtime_ns, snapshot)
+            )
 
     candidates.sort(key=lambda item: item[0])
     processed = updated_count = errors = 0
@@ -254,6 +377,16 @@ def main() -> int:
     for _, path, text, url, mtime, previous in candidates[: max(args.limit, 0)]:
         try:
             raw = request_metrics(base_url, token, url)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            errors += 1
+            print(f"ERROR={path.name}: {type(error).__name__}: {error}", file=sys.stderr)
+            if is_collector_failure(error):
+                record_health(db, alert_target, False, f"{type(error).__name__}: {error}")
+                # X or the collector is down: stop here instead of waiting out every timeout.
+                break
+            continue
+        record_health(db, alert_target, True)
+        try:
             collected = parse_iso(str(raw.get("collected_at") or "")) or datetime.now(timezone.utc)
             metrics = {
                 key: parse_count(raw.get(key))
@@ -295,6 +428,7 @@ def main() -> int:
     print(f"PROCESSED={processed}")
     print(f"UPDATED_TOTAL={updated_count}")
     print(f"ERRORS={errors}")
+    db.close()
     return 0 if errors == 0 else 1
 
 
