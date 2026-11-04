@@ -278,8 +278,14 @@ def _state() -> sqlite3.Connection:
 
 
 def hidden_ids() -> set[str]:
-    with closing(_state()) as db:
-        return {row[0] for row in db.execute("SELECT item_id FROM hidden")}
+    # The dashboard must keep working even when the state file cannot be opened,
+    # for example under a read-only systemd sandbox.
+    try:
+        with closing(_state()) as db:
+            return {row[0] for row in db.execute("SELECT item_id FROM hidden")}
+    except (sqlite3.Error, OSError) as error:
+        print(f"hidden items unavailable: {error}", file=sys.stderr, flush=True)
+        return set()
 
 
 def set_hidden(item_id: str, hidden: bool) -> None:
