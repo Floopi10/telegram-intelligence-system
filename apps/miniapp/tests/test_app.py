@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sqlite3
 import os
 import sys
 import time
@@ -159,6 +160,14 @@ class HiddenTests(unittest.IsolatedAsyncioTestCase):
         storage.close()
         twitter = app.load_dashboard()["twitter"]
         self.assertEqual([(item["author"], item["tier"]) for item in twitter], [("viral", "winner")])
+
+    def test_unwritable_state_db_does_not_break_the_dashboard(self):
+        from unittest.mock import patch
+
+        with patch.object(app, "_state", side_effect=sqlite3.OperationalError("unable to open database file")):
+            data = app.load_dashboard()
+        self.assertEqual(len(data["knowledge"]), 2)
+        self.assertEqual(data["hidden_count"], 0)
 
     def test_x_ids_are_accepted(self):
         self.assertTrue(app.ITEM_ID_RE.fullmatch("x:https://x.com/Some_User/status/2116898898019020879"))
