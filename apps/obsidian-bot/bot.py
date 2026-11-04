@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from html import escape
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -13,7 +13,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message
+from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -21,6 +21,15 @@ from config import Settings, load_settings
 from llm import LLM
 from machine_note import structure_machine_message
 from parser import parse_post
+from ui import (
+    collect_note_stats,
+    failure_text,
+    help_text,
+    progress_text,
+    saved_card,
+    stats_text,
+    welcome_text,
+)
 from vault import Vault
 
 logging.basicConfig(
@@ -107,24 +116,23 @@ async def on_start(message: Message, settings: Settings) -> None:
     if not _is_allowed(settings, message):
         await message.answer("Этот бот закрытый. Доступа нет.")
         return
-    await message.answer(
-        "Привет! Я сохраняю посты из Telegram в твой Obsidian.\n\n"
-        "Просто перешли мне сообщение, либо отправь текст/фото/файл — "
-        "я разберу его через OpenRouter/AI, разложу теги, "
-        "сохраню медиа и положу .md-заметку в нужную папку vault.\n\n"
-        f"Vault: <code>{escape(str(settings.vault_path))}</code>\n"
-        f"Inbox: <code>{escape(str(settings.inbox_path))}</code>\n\n"
-        "/help — список категорий"
-    )
+    await message.answer(welcome_text(_note_stats(settings)))
 
 
 async def on_help(message: Message, settings: Settings) -> None:
     if not _is_allowed(settings, message):
         return
-    await message.answer(
-        "Доступные категории (AI выбирает одну):\n\n"
-        + "\n".join(f"• {escape(c)}" for c in settings.categories)
-    )
+    await message.answer(help_text(settings.categories))
+
+
+def _note_stats(settings: Settings):
+    return collect_note_stats(settings.inbox_path, settings.attachments_folder, datetime.now())
+
+
+async def on_stats(message: Message, settings: Settings) -> None:
+    if not _is_allowed(settings, message):
+        return
+    await message.answer(stats_text(_note_stats(settings)))
 
 
 async def on_album_part(
@@ -188,6 +196,7 @@ async def _flush_album_after(
         media_paths=media_paths,
         llm=llm,
         vault=vault,
+        inbox_path=settings.inbox_path,
     )
 
 
@@ -221,6 +230,7 @@ async def on_single_message(
         media_paths=media_paths,
         llm=llm,
         vault=vault,
+        inbox_path=settings.inbox_path,
     )
 
 
@@ -231,13 +241,14 @@ async def _process_post(
     media_paths: List[Path],
     llm: LLM,
     vault: Vault,
+    inbox_path: Path,
 ) -> None:
-    status = await message.answer("Разбираю пост…")
+    status = await message.answer(progress_text(text, len(media_paths)))
     try:
-        await _save_post(status, message, text, media_paths, llm, vault)
+        await _save_post(status, message, text, media_paths, llm, vault, inbox_path)
     except Exception:
         log.exception("Заметка не сохранена: message_id=%s", message.message_id)
-        await status.edit_text("❌ Заметка не сохранена. Перешли сообщение ещё раз, детали в логах бота.")
+        await status.edit_text(failure_text())
 
 
 async def _save_post(
@@ -247,6 +258,7 @@ async def _save_post(
     media_paths: List[Path],
     llm: LLM,
     vault: Vault,
+    inbox_path: Path,
 ) -> None:
     parsed = parse_post(text)
 
@@ -272,29 +284,27 @@ async def _save_post(
         author=_author_name(message),
     )
 
-    tags_str = ", ".join(f"#{escape(t)}" for t in (
-        list(dict.fromkeys(parsed.tags + structured.suggested_tags))
-    )) or "—"
-
-    if machine_routed:
-        header = "✅ Сохранено без повторного AI-запроса\n\n"
-    elif structured.fallback:
-        header = (
-            "⚠️ Сохранено через fallback (AI/OpenRouter не отвечает)\n"
-            "Категория принудительно = 'Другое'.\n"
-            "Проверь OPENROUTER_API_KEY в .env и логи бота.\n\n"
-        )
-    else:
-        header = "✅ Сохранено\n\n"
-
+    route = "machine" if machine_routed else "fallback" if structured.fallback else "ai"
+    source_url = _source_url(message) or next(
+        (url for url in parsed.urls if url.startswith("https://")), None
+    )
+    keyboard = (
+        InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔗 Источник", url=source_url)]])
+        if source_url else None
+    )
     await status.edit_text(
-        f"{header}"
-        f"<b>{escape(structured.title)}</b>\n"
-        f"<i>{escape(structured.summary)}</i>\n\n"
-        f"📁 <code>{escape(structured.category)}</code>\n"
-        f"🏷 {tags_str}\n"
-        f"📎 медиа: {len(media_paths)}\n"
-        f"📝 <code>{escape(str(note_path))}</code>"
+        saved_card(
+            title=structured.title,
+            summary=structured.summary,
+            category=structured.category,
+            tags=[*parsed.tags, *structured.suggested_tags],
+            media_count=len(media_paths),
+            note_path=note_path,
+            inbox_path=inbox_path,
+            route=route,
+        ),
+        reply_markup=keyboard,
+        disable_web_page_preview=True,
     )
 
 
@@ -308,6 +318,7 @@ def build_router() -> Router:
     current = Router()
     current.message.register(on_start, CommandStart())
     current.message.register(on_help, Command("help"))
+    current.message.register(on_stats, Command("stats"))
     current.message.register(on_album_part, F.media_group_id)
     current.message.register(
         on_single_message,
@@ -345,6 +356,14 @@ async def main() -> None:
     dp["vault"] = vault
     dp.include_router(build_router())
 
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Что умеет бот"),
+            BotCommand(command="stats", description="Заметки за неделю"),
+            BotCommand(command="help", description="Категории"),
+        ])
+    except TelegramNetworkError:
+        log.warning("Меню команд не обновлено: Telegram недоступен")
     log.info("Бот запущен. Vault: %s", settings.vault_path)
     if settings.allowed_user_ids:
         log.info("Allowed users: %s", settings.allowed_user_ids)
