@@ -44,6 +44,20 @@ PERSONAL_BANTER = re.compile(
     re.I | re.S,
 )
 
+MUTUAL_ACTIVITY = re.compile(
+    r"взаимн\w*\s+(?:актив|лайк|подпис|коммент|пиар)|бот\w*\s+для\s+взаимн|"
+    r"\bmutual\s+(?:engagement|support|follow)\s+(?:bot|group|chat)\b",
+    re.I,
+)
+
+# Cold outreach from BD managers lands in knowledge chats but is a pitch, not knowledge.
+BD_PITCH = re.compile(
+    r"\b(?:i'?m|i am)\s+(?:handling|leading|managing|responsible for)\s+(?:the\s+)?"
+    r"(?:business development|bd|partnerships?)\b|"
+    r"\bthese members list related work\b|\bpartner campaign for traders\b|\bwe can offer you\b",
+    re.I,
+)
+
 TRUSTED_LOW_SCORE_SOURCES = ("alpha professor",)
 
 
@@ -56,6 +70,8 @@ def is_knowledge_noise(text: str) -> bool:
     if PROMO_AND_SOLICITATION.search(normalized):
         return True
     if PERSONAL_BANTER.search(normalized):
+        return True
+    if MUTUAL_ACTIVITY.search(normalized) or BD_PITCH.search(normalized):
         return True
     if len(normalized) < 260 and CONTEXT_FRAGMENT.search(normalized):
         return True

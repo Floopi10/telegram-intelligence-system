@@ -156,6 +156,9 @@
     .primary svg,.icon-btn svg{width:17px;height:17px}
     .icon-btn{width:46px;height:46px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:var(--r-md);background:var(--raise);color:var(--ink);transition:background .2s,transform .15s var(--ease)}
     .icon-btn:hover{background:#18222c}.icon-btn:active{transform:scale(.95)}
+    .vault-btn{display:flex;align-items:center;justify-content:center;gap:8px;grid-column:1/-1;height:44px;border:1px solid rgba(126,224,181,.35);border-radius:var(--r-md);background:var(--accent-wash);color:var(--accent);font-weight:600;transition:background .2s,transform .15s var(--ease)}
+    .vault-btn svg{width:17px;height:17px}.vault-btn:active{transform:scale(.98)}
+    .vault-btn.done{border-color:var(--line);background:transparent;color:var(--muted);cursor:default}
 
     .toast{position:fixed;z-index:var(--z-toast);left:50%;bottom:calc(env(safe-area-inset-bottom) + 92px);transform:translate(-50%,12px);opacity:0;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;font-weight:550;padding:9px 14px;border-radius:999px;transition:opacity .2s,transform .25s var(--ease)}
     .toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
@@ -179,6 +182,8 @@
   <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.2h-4.2"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5M19 5l-8 8"/><path d="M17 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18V8.5A1.5 1.5 0 0 1 6.5 7H11"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.2A1.7 1.7 0 0 0 13.8 4.5H6.2A1.7 1.7 0 0 0 4.5 6.2v7.6a1.7 1.7 0 0 0 1.7 1.7h2.3"/></symbol>
+  <symbol id="i-vault" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 19.5 8v8L12 21l-7.5-5V8z"/><path d="M12 3v18M4.5 8 12 12l7.5-4" opacity=".55"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 12S7 6.5 12 6.5c1.6 0 3 .5 4.3 1.2M20.5 12S17 17.5 12 17.5c-1.6 0-3-.5-4.3-1.2"/><path d="M4.5 19.5l15-15"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 19.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 6.8a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10-7.5 10z"/></symbol>
@@ -383,12 +388,14 @@ function openSheet(x){
   $('#sheetBody').innerHTML=`<div class="meta"><span class="score num ${scoreClass(x.score)}" style="width:28px;height:24px;border-radius:7px;font-size:12.5px">${esc(x.score)}</span><span class="n">${esc(x.niche||'—')}</span><span class="dot">·</span><span class="s">${esc(x.source||'Источник')}</span>${time(x.date)?`<span class="dot">·</span><span>${ago(time(x.date))}</span>`:''}</div>
     <h2 id="sheetTitle">${esc(x.title)}</h2>${tiles}${why}
     ${body?`<div class="block"><h4>${x.kind==='twitter'?'Разбор':'Текст'}</h4><p class="full">${esc(body)}</p></div>`:''}${points}
-    <div class="actions"><button type="button" class="primary" id="openSource" ${url?'':'disabled'}>${icon('i-open')}Открыть ${x.kind==='twitter'?'в X':'источник'}</button><button type="button" class="icon-btn" id="copySource" aria-label="Копировать ссылку" ${url?'':'disabled'}>${icon('i-copy')}</button><button type="button" class="icon-btn" id="hideItem" aria-label="Скрыть из Radar">${icon('i-hide')}</button></div>`;
+    <div class="actions"><button type="button" class="primary" id="openSource" ${url?'':'disabled'}>${icon('i-open')}Открыть ${x.kind==='twitter'?'в X':'источник'}</button><button type="button" class="icon-btn" id="copySource" aria-label="Копировать ссылку" ${url?'':'disabled'}>${icon('i-copy')}</button><button type="button" class="icon-btn" id="hideItem" aria-label="Скрыть из Radar">${icon('i-hide')}</button>
+    <button type="button" class="vault-btn ${x.saved?'done':''}" id="saveItem" ${x.saved?'disabled':''}>${icon(x.saved?'i-check':'i-vault')}${x.saved?'Уже в Obsidian':'В Obsidian'}</button></div>`;
   $('#shade').classList.add('open');$('#shade').setAttribute('aria-hidden','false');
   $('.sheet').scrollTop=0;
   $('#openSource').onclick=()=>{if(!url)return;haptic('medium');if(tg&&/^https:\/\/t\.me\//.test(url)&&tg.openTelegramLink)tg.openTelegramLink(url);else if(tg)tg.openLink(url);else window.open(url,'_blank','noopener')};
   $('#copySource').onclick=()=>copy(url);
   $('#hideItem').onclick=()=>hideItem(x);
+  $('#saveItem').onclick=()=>saveItem(x);
   if(tg&&tg.BackButton){tg.BackButton.show()}
 }
 function closeSheet(){
@@ -399,6 +406,16 @@ const LISTS=['vacancies','twitter','knowledge'];
 async function postHidden(id,hidden){
   const r=await fetch('/api/hide',{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg&&tg.initData||''},body:JSON.stringify({id,hidden})});
   if(!r.ok)throw new Error(r.status);
+}
+async function saveItem(x){
+  const btn=$('#saveItem');if(!btn||x.saved)return;btn.disabled=true;btn.lastChild.textContent='Сохраняю…';
+  try{
+    const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg&&tg.initData||''},body:JSON.stringify({id:x.id})});
+    if(!r.ok)throw new Error(r.status);
+    const d=await r.json();x.saved=true;haptic('medium');
+    btn.classList.add('done');btn.innerHTML=icon('i-check')+'Уже в Obsidian';
+    toast(d.already?'Уже было в Obsidian':'Сохранено в Obsidian');renderList();
+  }catch(e){btn.disabled=false;btn.innerHTML=icon('i-vault')+'В Obsidian';toast('Не удалось сохранить')}
 }
 async function hideItem(x){
   const btn=$('#hideItem');if(btn)btn.disabled=true;

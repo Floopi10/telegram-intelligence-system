@@ -231,6 +231,10 @@ class MessagePipeline:
         self._knowledge_lock = asyncio.Lock()
         self._ai_budget = int(os.getenv("TWITTER_AI_DAILY_BUDGET", str(DEFAULT_AI_DAILY_BUDGET)))
         self._ai_paused_until = 0.0
+        # Streams sent to the Obsidian bot on their own; the rest stays in Radar until saved by hand.
+        self._autosave = {
+            name.strip() for name in os.getenv("OBSIDIAN_AUTOSAVE", "vacancy").split(",") if name.strip()
+        }
 
     async def handle(self, event) -> None:
         text = event.raw_text.strip()
@@ -447,7 +451,7 @@ class MessagePipeline:
             risk_flags=analysis.risk_flags,
             analysis=payload,
         )
-        if final_keep:
+        if final_keep and "twitter" in self._autosave:
             storage.enqueue_message(
                 dedupe_key=f"twitter:{url}",
                 target=self.settings.knowledge_target,
@@ -512,7 +516,7 @@ class MessagePipeline:
                 balance.reason if saved and balance is not None else save_reason,
                 record.score, text,
             )
-        if saved:
+        if saved and item_kind in self._autosave:
             storage.enqueue_message(
                 dedupe_key=f"knowledge:{record.chat_id}:{record.message_id}",
                 target=self.settings.knowledge_target,
