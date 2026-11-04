@@ -11,6 +11,10 @@ NICHE_ORDER = (
     "AI",
     "Финансы",
     "Роботы",
+    "Тру-крайм",
+    "18+",
+    "Стримы",
+    "Казино и ставки",
     "Девушки и lifestyle",
     "Web3",
     "Технологии",
@@ -24,16 +28,20 @@ NICHE_ORDER = (
 REFERENCE_ACCOUNT_NICHES: dict[str, str] = {
     **{handle: "AI" for handle in (
         "kirillk_web3", "oluwaphilemon1", "solvaix", "mikenevermiss",
-        "abyssalld", "0xinfer", "0xzynex", "caesar_aii", "vepsi__",
+        "abyssalld", "0xinfer", "0xzynex", "caesar_aii", "vepsi__", "beamnxw",
     )},
     **{handle: "Финансы" for handle in (
-        "0xleeem", "0xcodez", "beamnxw", "0xcodila", "mahaximus_",
+        "0xleeem", "0xcodez", "0xcodila", "mahaximus_",
     )},
     **{handle: "Девушки и lifestyle" for handle in (
         "framexin", "crimson_moti", "psych0psina", "0x_anni", "kevin_vibex",
     )},
     **{handle: "Роботы" for handle in (
         "0xforge", "shred_0x", "yurash1104", "timdaugs", "fuzzyxbt",
+    )},
+    **{handle: "Стримы" for handle in (
+        "colehayes28", "0xtreexyzz", "dn_degen", "sovyre", "athenari0",
+        "studiolineui", "s1ta10",
     )},
     **{handle: "Claude + Obsidian" for handle in (
         "hodlreaper", "0xkkai", "z0rynx",
@@ -66,8 +74,31 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "Девушки и lifestyle": (
         r"\bgirl", r"\bwomen?\b", r"\bfemale", r"beauty", r"fashion",
         r"makeup", r"skincare", r"outfit", r"fashion model", r"lifestyle",
-        r"onlyfans", r"\bof model", r"девуш", r"женщин", r"\bмод[аыеу]\b", r"красот",
+        r"девуш", r"женщин", r"\bмод[аыеу]\b", r"красот",
         r"макияж", r"\bуход",
+    ),
+    "Тру-крайм": (
+        r"true crime", r"serial killer", r"\bmurder", r"homicide", r"cold case",
+        r"\bkilled (?:his|her|their|\d)", r"\bconvicted\b", r"crime scene", r"\bmanhunt",
+        r"\bserial (?:rapist|murderer)", r"\bcartel", r"\bmafia\b",
+        r"тру.?крайм", r"серийн\w* убийц", r"\bманьяк", r"убийств", r"убийц",
+        r"преступлен", r"\bмафи",
+    ),
+    "18+": (
+        r"onlyfans", r"\bfansly\b", r"\bof model", r"\bnsfw\b", r"\bporn", r"\bxxx\b",
+        r"adult content", r"adult creator", r"\bonly ?fans", r"\b18\+",
+        r"порн", r"эротик", r"\bинтим", r"для взрослых",
+    ),
+    "Стримы": (
+        r"\bstreamers?\b", r"livestream", r"live stream", r"\btwitch\b", r"\bkick\.com",
+        r"\bon stream\b", r"\bstreaming (?:setup|clip|highlight)", r"\bclip farm",
+        r"\bстрим", r"стример", r"\bтвич",
+    ),
+    "Казино и ставки": (
+        r"\bcasino", r"\bpoker\b", r"gambl", r"slot machine", r"\bslots\b", r"jackpot",
+        r"roulette", r"blackjack", r"high roller", r"\bstake\.com", r"lost (?:it all|everything)",
+        r"казино", r"\bпокер", r"лудоман", r"рулетк", r"\bслот", r"джекпот", r"\bставк",
+        r"проиграл (?:всё|все|\d)",
     ),
     "Claude + Obsidian": (
         r"claude.{0,40}obsidian", r"obsidian.{0,40}claude",
@@ -79,6 +110,7 @@ NICHE_PATTERNS: dict[str, tuple[str, ...]] = {
     "Математика": (
         r"mathemat", r"algebra", r"geometry", r"calculus", r"theorem",
         r"equation", r"математ", r"алгебр", r"геометри", r"теорем", r"уравнен",
+        r"\bphysics\b", r"physicist", r"quantum mechanic", r"\bфизик",
     ),
     "Web3": (
         r"web3", r"crypto", r"blockchain", r"onchain", r"token", r"defi",
@@ -114,7 +146,7 @@ SPORT_PATTERNS = (
 )
 
 RADAR_NOISE_PATTERNS = (
-    r"\b(?:betting|sportsbook|bet slip|odds|parlay)\b",
+    r"\b(?:sportsbook|bet slip|odds|parlay)\b",
     r"\b(?:hiring|job opening|open position|apply now|vacancy)\b",
     r"\b(?:ambassador program|giveaway|airdrop campaign|referral code)\b",
     r"\b(?:dm me|join our channel|limited spots|guaranteed profit)\b",

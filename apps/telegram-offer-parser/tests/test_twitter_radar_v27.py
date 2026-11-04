@@ -54,7 +54,7 @@ class TwitterRadarTests(unittest.TestCase):
         for url, expected in examples.items():
             with self.subTest(url=url):
                 self.assertEqual(classify_twitter_niche(url, "example post"), expected)
-        self.assertEqual(len(REFERENCE_ACCOUNT_NICHES), 36)
+        self.assertEqual(len(REFERENCE_ACCOUNT_NICHES), 43)
 
     def test_specific_niches_win_over_broad_keywords(self):
         self.assertEqual(
@@ -63,7 +63,7 @@ class TwitterRadarTests(unittest.TestCase):
         )
         self.assertEqual(classify_twitter_niche("Mac mini M4 local server"), "Mac mini")
         self.assertEqual(classify_twitter_niche("geometry theorem proof"), "Математика")
-        self.assertEqual(classify_twitter_niche("OnlyFans creator model"), "Девушки и lifestyle")
+        self.assertEqual(classify_twitter_niche("OnlyFans creator model"), "18+")
 
     def test_broken_mixed_language_hook_is_cleaned(self):
         value = _clean_hook(
