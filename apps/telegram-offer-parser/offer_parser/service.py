@@ -16,6 +16,7 @@ from .chats import load_existing_selection, load_selected, write_chats
 from .config import Settings
 from .exclusions import filter_excluded
 from .digest import daily_digest_loop, send_daily_digest_once
+from .firsay_feed import FeedConfig, firsay_feed_loop
 from .outbox import outbox_loop
 from .matcher import MatchResult, OfferMatcher
 from .storage import OfferRecord, Storage
@@ -623,6 +624,9 @@ async def monitor(settings: Settings) -> None:
             [item for item in (storage, knowledge_storage) if item is not None],
         ))
     ]
+    feed_config = FeedConfig.from_env(settings.knowledge_database_path.parent) if knowledge_storage is not None else None
+    if feed_config is not None:
+        background.append(asyncio.create_task(firsay_feed_loop(pipeline, feed_config)))
     digest_enabled = settings.daily_digest_enabled and knowledge_storage is not None
     if digest_enabled:
         background.append(asyncio.create_task(
@@ -679,6 +683,7 @@ async def monitor(settings: Settings) -> None:
             else ", knowledge_balance=off"
         )
         + (f", digest={settings.daily_digest_hour_msk:02d}:00 MSK→{settings.daily_digest_target}" if digest_enabled else ", digest=off")
+        + (", firsay_feed=on" if feed_config is not None else ", firsay_feed=off")
         + ". Для остановки нажми Ctrl+C."
     )
     try:
