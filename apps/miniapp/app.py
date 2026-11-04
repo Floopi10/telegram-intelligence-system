@@ -175,8 +175,14 @@ def _twitter_item(row: sqlite3.Row) -> dict:
 
 
 def _is_today(value: object) -> bool:
-    today_msk = datetime.now(timezone(timedelta(hours=3))).date().isoformat()
-    return str(value or "")[:10] == today_msk
+    msk = timezone(timedelta(hours=3))
+    try:
+        moment = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(msk).date() == datetime.now(msk).date()
 
 
 def load_dashboard() -> dict:
@@ -188,10 +194,14 @@ def load_dashboard() -> dict:
             WHERE created_at >= datetime('now', '-7 days')
             ORDER BY message_date DESC LIMIT 500"""
         ).fetchall()
-        vacancies, knowledge = [], []
+        vacancies, knowledge, offers = [], [], []
         for row in rows:
             item = _offer(row)
-            if row["item_kind"] == "vacancy" and vacancy_is_clean(row["text"]):
+            if row["item_kind"] == "offer":
+                # Already passed the offer rules in the parser (Firsay feed).
+                item.pop("kind", None)
+                offers.append(item)
+            elif row["item_kind"] == "vacancy" and vacancy_is_clean(row["text"]):
                 item.pop("kind", None)
                 vacancies.append(item)
             elif row["item_kind"] == "knowledge" and knowledge_is_clean(row["text"], row["score"]):
@@ -217,8 +227,9 @@ def load_dashboard() -> dict:
         saved = saved_ids()
         vacancies = [item for item in vacancies if item["id"] not in hidden]
         knowledge = [item for item in knowledge if item["id"] not in hidden]
+        offers = [item for item in offers if item["id"] not in hidden]
         twitter = [item for item in twitter if item["id"] not in hidden]
-        for item in (*vacancies, *knowledge, *twitter):
+        for item in (*vacancies, *knowledge, *offers, *twitter):
             item["saved"] = item["id"] in saved
 
         decisions = {
@@ -255,6 +266,7 @@ def load_dashboard() -> dict:
             "stats": {
                 "vacancies_today": sum(_is_today(item["date"]) for item in vacancies),
                 "knowledge_today": sum(_is_today(item["date"]) for item in knowledge),
+                "offers_today": sum(_is_today(item["date"]) for item in offers),
                 "twitter_today": int(twitter_today or 0),
                 "sources_today": int(sources_today or 0),
                 "accepted": accepted,
@@ -265,6 +277,7 @@ def load_dashboard() -> dict:
             "vacancies": vacancies[:80],
             "twitter": twitter,
             "knowledge": knowledge[:140],
+            "offers": offers[:100],
             "niches": niches,
             "top_sources": top_sources,
             "hidden_count": len(hidden),
@@ -337,7 +350,7 @@ def machine_text(item: dict) -> str:
             lines.extend(["", "Реальные метрики X:", *shown])
         lines.extend(["", "Цитата и источник:", item["url"]])
     else:
-        kind = "Вакансия" if item.get("kind") == "vacancy" else "Знание"
+        kind = {"vacancy": "Вакансия", "offer": "Оффер"}.get(item.get("kind"), "Знание")
         lines = [
             "KNOWLEDGE CANDIDATE FROM TELEGRAM", "",
             f"Тип: {kind}",

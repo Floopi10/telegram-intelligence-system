@@ -170,6 +170,28 @@ class HiddenTests(unittest.IsolatedAsyncioTestCase):
         twitter = app.load_dashboard()["twitter"]
         self.assertEqual([(item["author"], item["tier"]) for item in twitter], [("viral", "winner")])
 
+    async def test_firsay_offers_get_their_own_list_and_can_be_hidden(self):
+        from datetime import datetime, timezone
+
+        from offer_parser.storage import OfferRecord, Storage
+
+        storage = Storage(app.DB_PATH)
+        storage.save(OfferRecord(
+            chat_id=-8_000_000_000_001, message_id=7, chat_title="Firsay · Web3 Jobs", sender_id=None,
+            sender_name="@alice", message_date=datetime.now(timezone.utc),
+            text="Looking for KOLs for a paid campaign, $500 per post, DM us.", score=8,
+            matched_rules="looking for kol", compensation="$500", source_url="https://t.me/web3jobs/7",
+        ), kind="offer")
+        storage.close()
+        data = app.load_dashboard()
+        self.assertEqual([item["id"] for item in data["offers"]], ["tg:-8000000000001:7"])
+        self.assertEqual(data["stats"]["offers_today"], 1)
+        self.assertEqual(len(data["knowledge"]), 2)
+        self.assertNotIn("kind", data["offers"][0])
+        await self.post({"id": "tg:-8000000000001:7"})
+        self.assertEqual(app.load_dashboard()["offers"], [])
+        self.assertIn("Тип: Оффер", app.machine_text(app.find_item("tg:-8000000000001:7")))
+
     def test_unwritable_state_db_does_not_break_the_dashboard(self):
         from unittest.mock import patch
 
