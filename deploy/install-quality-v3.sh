@@ -31,6 +31,7 @@ FILES=(
   tests/test_vacancy_filter.py
   tests/test_v29.py
   tests/test_digest_dedupe.py
+  tests/test_radar_niches_v30.py
 )
 
 [[ $EUID -eq 0 ]] || exec sudo --preserve-env=PROJECT_DIR,SERVICE_NAME,SERVICE_USER "$0" "$@"
