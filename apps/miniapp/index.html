@@ -150,7 +150,7 @@
     .points{margin:0;padding:0;list-style:none;display:grid;gap:7px}
     .points li{position:relative;padding-left:16px;color:var(--soft);line-height:1.5;font-size:13.5px}
     .points li:before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:2px;background:var(--accent)}
-    .actions{position:sticky;bottom:calc(-1 * (env(safe-area-inset-bottom) + 18px));display:grid;grid-template-columns:1fr auto;gap:8px;margin:18px -18px calc(-1 * (env(safe-area-inset-bottom) + 18px));padding:12px 18px calc(env(safe-area-inset-bottom) + 14px);background:linear-gradient(180deg,rgba(12,18,24,0),#0c1218 30%)}
+    .actions{position:sticky;bottom:calc(-1 * (env(safe-area-inset-bottom) + 18px));display:grid;grid-template-columns:1fr auto auto;gap:8px;margin:18px -18px calc(-1 * (env(safe-area-inset-bottom) + 18px));padding:12px 18px calc(env(safe-area-inset-bottom) + 14px);background:linear-gradient(180deg,rgba(12,18,24,0),#0c1218 30%)}
     .primary{display:flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:var(--r-md);height:46px;background:var(--accent);color:var(--accent-ink);font-weight:650;transition:filter .2s,transform .15s var(--ease)}
     .primary:hover{filter:brightness(1.06)}.primary:active{transform:scale(.98)}.primary:disabled{opacity:.4;cursor:default}
     .primary svg,.icon-btn svg{width:17px;height:17px}
@@ -158,7 +158,9 @@
     .icon-btn:hover{background:#18222c}.icon-btn:active{transform:scale(.95)}
 
     .toast{position:fixed;z-index:var(--z-toast);left:50%;bottom:calc(env(safe-area-inset-bottom) + 92px);transform:translate(-50%,12px);opacity:0;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;font-weight:550;padding:9px 14px;border-radius:999px;transition:opacity .2s,transform .25s var(--ease)}
-    .toast.show{opacity:1;transform:translate(-50%,0)}
+    .toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+    .toast{display:flex;align-items:center;gap:12px;white-space:nowrap}
+    .toast button{border:0;background:transparent;color:#0f7a54;font-weight:650;padding:0;font-size:13px}
 
     @media(min-width:640px){.list{grid-template-columns:1fr 1fr}.list .day{grid-column:1/-1}.sheet{left:50%;right:auto;width:600px;margin-left:-300px}}
     @media(max-width:430px){.ops{grid-template-columns:1fr}.today{grid-template-columns:repeat(2,1fr)}.today button:nth-child(2){border-right:0}.today button:nth-child(-n+2){border-bottom:1px solid var(--line)}.tiles{grid-template-columns:repeat(2,1fr)}.brand small{display:none}}
@@ -177,6 +179,7 @@
   <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.2h-4.2"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5h5v5M19 5l-8 8"/><path d="M17 13.5V18a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18V8.5A1.5 1.5 0 0 1 6.5 7H11"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.2A1.7 1.7 0 0 0 13.8 4.5H6.2A1.7 1.7 0 0 0 4.5 6.2v7.6a1.7 1.7 0 0 0 1.7 1.7h2.3"/></symbol>
+  <symbol id="i-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 12S7 6.5 12 6.5c1.6 0 3 .5 4.3 1.2M20.5 12S17 17.5 12 17.5c-1.6 0-3-.5-4.3-1.2"/><path d="M4.5 19.5l15-15"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 19.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 6.8a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10-7.5 10z"/></symbol>
   <symbol id="i-repost" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10.5v5M17 17H6.5v-5"/><path d="m15 4.5 2.5 2.5L15 9.5M9 19.5 6.5 17 9 14.5"/></symbol>
@@ -231,7 +234,7 @@ const EMPTY={
   twitter:['Сильных X-постов нет','Посты попадают сюда после проверки метриками.'],
   knowledge:['Knowledge пуст','Здесь появятся материалы без промо и мусора.']
 };
-const TIER={'подтверждённый победитель':'залетел','ранний кандидат':'ранний сигнал','полезная механика':'механика'};
+const TIER={winner:'залетел',early:'ранний сигнал',mechanic:'механика'};
 
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl=v=>{try{const u=new URL(v);return u.protocol==='https:'?u.href:''}catch(e){return ''}};
@@ -263,7 +266,11 @@ function highlight(text){
 }
 const scoreClass=s=>s>=8?'hi':s>=6?'mid':'';
 
-function toast(text){const el=$('#toast');el.textContent=text;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
+function toast(text,action){
+  const el=$('#toast');el.innerHTML=`<span>${esc(text)}</span>${action?`<button type="button">${esc(action.label)}</button>`:''}`;
+  if(action)el.querySelector('button').onclick=()=>{el.classList.remove('show');action.run()};
+  el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),action?5000:1800);
+}
 
 function pool(tab){
   const d=state.data;if(!d)return [];
@@ -313,7 +320,7 @@ function xRow(x){
   if(m.likes!=null)parts.push(`<span>${icon('i-heart')}<b class="num">${fmt(m.likes)}</b></span>`);
   if(m.reposts!=null)parts.push(`<span>${icon('i-repost')}<b class="num">${fmt(m.reposts)}</b></span>`);
   if(m.views_per_hour!=null)parts.push(`<span>${icon('i-bolt')}<b class="num">${fmt(m.views_per_hour)}</b>/ч</span>`);
-  const tier=TIER[x.strength];if(tier)parts.push(`<span class="tier">${tier}</span>`);
+  const tier=TIER[x.tier];if(tier)parts.push(`<span class="tier">${tier}</span>`);
   return parts.length?`<div class="xrow">${parts.join('')}</div>`:'';
 }
 
@@ -376,16 +383,33 @@ function openSheet(x){
   $('#sheetBody').innerHTML=`<div class="meta"><span class="score num ${scoreClass(x.score)}" style="width:28px;height:24px;border-radius:7px;font-size:12.5px">${esc(x.score)}</span><span class="n">${esc(x.niche||'—')}</span><span class="dot">·</span><span class="s">${esc(x.source||'Источник')}</span>${time(x.date)?`<span class="dot">·</span><span>${ago(time(x.date))}</span>`:''}</div>
     <h2 id="sheetTitle">${esc(x.title)}</h2>${tiles}${why}
     ${body?`<div class="block"><h4>${x.kind==='twitter'?'Разбор':'Текст'}</h4><p class="full">${esc(body)}</p></div>`:''}${points}
-    <div class="actions"><button type="button" class="primary" id="openSource" ${url?'':'disabled'}>${icon('i-open')}Открыть ${x.kind==='twitter'?'в X':'источник'}</button><button type="button" class="icon-btn" id="copySource" aria-label="Копировать ссылку" ${url?'':'disabled'}>${icon('i-copy')}</button></div>`;
+    <div class="actions"><button type="button" class="primary" id="openSource" ${url?'':'disabled'}>${icon('i-open')}Открыть ${x.kind==='twitter'?'в X':'источник'}</button><button type="button" class="icon-btn" id="copySource" aria-label="Копировать ссылку" ${url?'':'disabled'}>${icon('i-copy')}</button><button type="button" class="icon-btn" id="hideItem" aria-label="Скрыть из Radar">${icon('i-hide')}</button></div>`;
   $('#shade').classList.add('open');$('#shade').setAttribute('aria-hidden','false');
   $('.sheet').scrollTop=0;
   $('#openSource').onclick=()=>{if(!url)return;haptic('medium');if(tg&&/^https:\/\/t\.me\//.test(url)&&tg.openTelegramLink)tg.openTelegramLink(url);else if(tg)tg.openLink(url);else window.open(url,'_blank','noopener')};
   $('#copySource').onclick=()=>copy(url);
+  $('#hideItem').onclick=()=>hideItem(x);
   if(tg&&tg.BackButton){tg.BackButton.show()}
 }
 function closeSheet(){
   if(!state.open)return;state.open=null;$('#shade').classList.remove('open');$('#shade').setAttribute('aria-hidden','true');
   if(tg&&tg.BackButton)tg.BackButton.hide();
+}
+const LISTS=['vacancies','twitter','knowledge'];
+async function postHidden(id,hidden){
+  const r=await fetch('/api/hide',{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg&&tg.initData||''},body:JSON.stringify({id,hidden})});
+  if(!r.ok)throw new Error(r.status);
+}
+async function hideItem(x){
+  const btn=$('#hideItem');if(btn)btn.disabled=true;
+  try{await postHidden(x.id,true)}catch(e){if(btn)btn.disabled=false;toast('Не удалось скрыть');return}
+  haptic('medium');
+  const removed=LISTS.map(name=>{const list=state.data[name];const i=list.findIndex(it=>it.id===x.id);return i<0?null:{name,i,item:list.splice(i,1)[0]}}).filter(Boolean);
+  closeSheet();render();
+  toast('Скрыто из Radar',{label:'Вернуть',run:async()=>{
+    try{await postHidden(x.id,false)}catch(e){toast('Не удалось вернуть');return}
+    removed.forEach(r=>state.data[r.name].splice(r.i,0,r.item));haptic('light');render();
+  }});
 }
 function copy(text){
   if(!text)return;const done=()=>{haptic('select');toast('Ссылка скопирована')};
