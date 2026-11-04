@@ -8,6 +8,8 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -25,11 +27,15 @@ from aiogram.types import (
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
+from capture import KINDS, Capture, append_line, classify, format_line, remove_line, target_path
 from config import Settings, load_settings
 from llm import LLM
 from machine_note import structure_machine_message
 from parser import parse_post
 from ui import (
+    CAPTURE_LABELS,
+    capture_card,
+    capture_undone_text,
     category_icon,
     category_picker_text,
     collect_note_stats,
@@ -76,6 +82,98 @@ class CardState:
 
 
 _cards: "OrderedDict[str, CardState]" = OrderedDict()
+MSK = ZoneInfo("Europe/Moscow")
+
+
+@dataclass
+class CaptureState:
+    text: str
+    kind: str
+    path: Path
+    line: str
+
+
+_captures: "OrderedDict[str, CaptureState]" = OrderedDict()
+
+
+def _remember_capture(state: CaptureState) -> str:
+    token = secrets.token_hex(5)
+    _captures[token] = state
+    while len(_captures) > MAX_CARDS:
+        _captures.popitem(last=False)
+    return token
+
+
+def _is_forwarded(message: Message) -> bool:
+    return any(
+        getattr(message, name, None) is not None
+        for name in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name", "forward_date")
+    )
+
+
+def _relative(path: Path, vault_path: Path) -> str:
+    try:
+        return path.relative_to(vault_path).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _capture_keyboard(token: str, kind: str) -> InlineKeyboardMarkup:
+    switch = [
+        InlineKeyboardButton(text=f"{icon} {label}", callback_data=f"cap:{token}:{other}")
+        for other, (icon, label) in CAPTURE_LABELS.items()
+        if other != kind
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        switch,
+        [
+            InlineKeyboardButton(text="📝 Заметкой", callback_data=f"cap:{token}:note"),
+            InlineKeyboardButton(text="↩️ Отменить", callback_data=f"cap:{token}:undo"),
+        ],
+    ])
+
+
+def _write_capture(settings: Settings, capture: Capture) -> CaptureState:
+    now = datetime.now(MSK)
+    path = target_path(settings.vault_path, capture.kind, capture.text, now)
+    line = format_line(capture.kind, capture.text, now)
+    append_line(path, capture.kind, line, now)
+    log.info("capture kind=%s path=%s", capture.kind, path)
+    return CaptureState(capture.text, capture.kind, path, line)
+
+
+async def on_capture_action(
+    callback: CallbackQuery, settings: Settings, llm: LLM, vault: Vault, xcollector: XCollector
+) -> None:
+    user = callback.from_user
+    if user is None or user.id not in settings.allowed_user_ids:
+        await callback.answer()
+        return
+    _, token, action = (callback.data or "").split(":", 2)
+    state = _captures.get(token)
+    if state is None or callback.message is None:
+        await callback.answer("Кнопка устарела: бот перезапускался после записи.", show_alert=True)
+        return
+    remove_line(state.path, state.line)
+    if action == "undo":
+        _captures.pop(token, None)
+        await callback.message.edit_text(capture_undone_text(state.line))
+    elif action == "note":
+        _captures.pop(token, None)
+        await callback.answer("Делаю заметку")
+        origin = SimpleNamespace(
+            message_id=callback.message.message_id, forward_from_chat=None, forward_from=None, from_user=user,
+        )
+        await _save_post(callback.message, origin, state.text, [], llm, vault, settings.inbox_path, xcollector)
+        return
+    elif action in KINDS:
+        moved = _write_capture(settings, Capture(action, state.text))
+        _captures[token] = moved
+        await callback.message.edit_text(
+            capture_card(moved.kind, moved.line, _relative(moved.path, settings.vault_path)),
+            reply_markup=_capture_keyboard(token, moved.kind),
+        )
+    await callback.answer()
 
 
 def _remember_card(card: CardState) -> str:
@@ -350,6 +448,16 @@ async def on_single_message(
     if not text and not _extract_media(message):
         return
 
+    capture = None if _is_forwarded(message) or _extract_media(message) else classify(text)
+    if capture is not None:
+        state = _write_capture(settings, capture)
+        token = _remember_capture(state)
+        await message.answer(
+            capture_card(state.kind, state.line, _relative(state.path, settings.vault_path)),
+            reply_markup=_capture_keyboard(token, state.kind),
+        )
+        return
+
     media_paths: List[Path] = []
     media = _extract_media(message)
     if media:
@@ -470,6 +578,7 @@ def build_router() -> Router:
     current.message.register(on_start, CommandStart())
     current.message.register(on_help, Command("help"))
     current.message.register(on_stats, Command("stats"))
+    current.callback_query.register(on_capture_action, F.data.startswith("cap:"))
     current.callback_query.register(on_card_action)
     current.message.register(on_album_part, F.media_group_id)
     current.message.register(
