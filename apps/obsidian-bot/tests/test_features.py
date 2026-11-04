@@ -49,6 +49,9 @@ class XEnrichTests(unittest.TestCase):
         self.assertEqual(parse_count("1,132"), 1132)
         self.assertEqual(parse_count("12.5K"), 12500)
         self.assertIsNone(parse_count("Reply"))
+        self.assertEqual(parse_count("1 Bookmark"), 1)
+        self.assertEqual(parse_count("5 Bookmarks. Bookmark"), 5)
+        self.assertEqual(parse_count("12.5K Likes"), 12500)
 
     def test_enriched_text_uses_lines_the_note_builder_parses(self):
         post = XPost("https://x.com/a/status/1", "a", "Hook line", "2026-11-01T10:00:00Z",

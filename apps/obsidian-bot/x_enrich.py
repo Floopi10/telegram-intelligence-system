@@ -52,11 +52,12 @@ def is_bare_link(text: str) -> bool:
 def parse_count(value: object) -> Optional[int]:
     if value is None:
         return None
-    text = str(value).replace(" ", "").replace("\xa0", "").replace(" ", "")
-    match = re.search(r"([0-9][0-9,.]*)([KMB]?)", text, re.IGNORECASE)
+    text = str(value).replace("\u202f", " ").replace("\xa0", " ")
+    # A suffix counts only when no letter follows it: "1 Bookmark" is one, not a billion.
+    match = re.search(r"(\d(?:[\d,.]|\s(?=\d{3}(?!\d)))*)(?:\s?([KMB])(?![A-Za-z]))?", text, re.IGNORECASE)
     if not match:
         return None
-    number, suffix = match.group(1), match.group(2).upper()
+    number, suffix = re.sub(r"\s", "", match.group(1)), (match.group(2) or "").upper()
     if "," in number and "." not in number:
         tail = number.rsplit(",", 1)[-1]
         number = number.replace(",", "." if suffix and len(tail) <= 2 else "")

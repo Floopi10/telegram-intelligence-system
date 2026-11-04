@@ -136,6 +136,13 @@ class EvidenceAndMetricsTests(unittest.TestCase):
         self.assertEqual(parse_number("12\xa0345 views"), 12345)
         self.assertIsNone(parse_number("Reply"))
 
+    def test_word_after_count_is_not_a_suffix(self):
+        self.assertEqual(parse_number("1 Bookmark"), 1)
+        self.assertEqual(parse_number("5 Bookmarks. Bookmark"), 5)
+        self.assertEqual(parse_number("1,234 Bookmarks"), 1234)
+        self.assertEqual(parse_number("12.5K Likes"), 12500)
+        self.assertEqual(parse_number("2B"), 2_000_000_000)
+
     def test_limit_still_reports_percentiles(self):
         rows = [{"views_per_hour": float(index), "signal_rate": 0.001} for index in range(30)]
         decision = decide_strength(
