@@ -23,6 +23,7 @@ FILES=(
   offer_parser/dedupe.py
   offer_parser/outbox.py
   offer_parser/twitter_strength.py
+  offer_parser/firsay_feed.py
   tests/test_system_hardening.py
   tests/test_twitter_radar_v27.py
   tests/test_twitter_evidence.py
@@ -32,6 +33,7 @@ FILES=(
   tests/test_v29.py
   tests/test_digest_dedupe.py
   tests/test_radar_niches_v30.py
+  tests/test_firsay_feed.py
 )
 
 [[ $EUID -eq 0 ]] || exec sudo --preserve-env=PROJECT_DIR,SERVICE_NAME,SERVICE_USER "$0" "$@"
