@@ -78,6 +78,49 @@ class XEnrichTests(unittest.TestCase):
             self.assertEqual((post.text, post.metrics["views"], post.author), ("Post", 1200, "A"))
 
 
+class BareLinkTests(unittest.TestCase):
+    def test_bare_link_detection(self):
+        from x_enrich import is_bare_link
+
+        self.assertTrue(is_bare_link("https://x.com/shynxbt/status/2117622828157567348"))
+        self.assertTrue(is_bare_link("глянь https://x.com/a/status/1"))
+        self.assertFalse(is_bare_link("Сильный разбор хуков от автора https://x.com/a/status/1"))
+
+
+class EmptyXNoteTests(unittest.IsolatedAsyncioTestCase):
+    async def run_save(self, text: str, post):
+        import bot
+
+        status = SimpleNamespace(edit_text=AsyncMock())
+        message = SimpleNamespace(message_id=1, forward_from_chat=None, forward_from=None, from_user=None)
+        vault = SimpleNamespace(save_note=AsyncMock(return_value=Path("/v/T/AI/n.md")))
+        llm = SimpleNamespace(structure=AsyncMock())
+        collector = SimpleNamespace(enabled=True, fetch=AsyncMock(return_value=post))
+        await bot._save_post(status, message, text, [], llm, vault, Path("/v/T"), collector)
+        return status, vault, llm
+
+    async def test_bare_link_without_post_is_not_saved(self):
+        status, vault, llm = await self.run_save("https://x.com/shynxbt/status/2117622828157567348", None)
+        vault.save_note.assert_not_awaited()
+        llm.structure.assert_not_awaited()
+        self.assertIn("Не смог получить пост из X", status.edit_text.await_args.args[0])
+
+    async def test_link_with_own_text_is_still_saved(self):
+        from llm import StructuredPost
+
+        structured = StructuredPost("T (Т)", "s", "## Суть\nx", "AI", ["ai"])
+        import bot
+
+        status = SimpleNamespace(edit_text=AsyncMock())
+        message = SimpleNamespace(message_id=1, forward_from_chat=None, forward_from=None, from_user=None)
+        vault = SimpleNamespace(save_note=AsyncMock(return_value=Path("/v/T/AI/n.md")))
+        llm = SimpleNamespace(structure=AsyncMock(return_value=structured))
+        collector = SimpleNamespace(enabled=True, fetch=AsyncMock(return_value=None))
+        await bot._save_post(status, message, "Сильный разбор хуков от автора https://x.com/a/status/1",
+                             [], llm, vault, Path("/v/T"), collector)
+        vault.save_note.assert_awaited_once()
+
+
 class RelatedTests(unittest.TestCase):
     def test_finds_notes_by_tags_and_title_words(self):
         with tempfile.TemporaryDirectory() as directory:

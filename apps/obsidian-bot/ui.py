@@ -142,6 +142,15 @@ def fetching_x_text() -> str:
     return "⏳ <b>Разбираю пост</b>\n<i>подтягиваю текст и метрики из X…</i>"
 
 
+def x_fetch_failed_text(url: str) -> str:
+    return (
+        "⚠️ <b>Не смог получить пост из X</b>\n"
+        "Заметку не сохранил: из одной ссылки вышла бы пустая.\n\n"
+        "Перешли ссылку ещё раз через пару минут или добавь к ней текст поста.\n"
+        f"<code>{escape(url)}</code>"
+    )
+
+
 def category_picker_text(title: str) -> str:
     return f"📁 <b>Куда перенести?</b>\n<i>{escape(title)}</i>"
 

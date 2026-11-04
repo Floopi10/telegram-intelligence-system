@@ -43,6 +43,12 @@ def first_status_url(text: str) -> Optional[str]:
     return f"https://x.com/{match.group(1)}/status/{match.group(2)}"
 
 
+def is_bare_link(text: str) -> bool:
+    """True when the message is a link with at most a couple of words around it."""
+    without_links = re.sub(r"https?://\S+", " ", text or "")
+    return len(re.findall(r"\w+", without_links)) < 3
+
+
 def parse_count(value: object) -> Optional[int]:
     if value is None:
         return None

@@ -37,6 +37,7 @@ from ui import (
     delete_confirm_text,
     failure_text,
     fetching_x_text,
+    x_fetch_failed_text,
     help_text,
     progress_text,
     saved_card,
@@ -44,7 +45,7 @@ from ui import (
     welcome_text,
 )
 from vault import Vault
-from x_enrich import XCollector, enriched_text, first_status_url
+from x_enrich import XCollector, enriched_text, first_status_url, is_bare_link
 
 logging.basicConfig(
     level=logging.INFO,
@@ -410,12 +411,18 @@ async def _save_post(
     machine_routed = structured is not None
     x_metrics = None
     x_url = None if machine_routed else first_status_url(text)
-    if x_url and xcollector.enabled:
-        await status.edit_text(fetching_x_text())
-        post = await xcollector.fetch(x_url)
+    if x_url:
+        post = None
+        if xcollector.enabled:
+            await status.edit_text(fetching_x_text())
+            post = await xcollector.fetch(x_url)
         if post is not None:
             raw_for_llm = enriched_text(raw_for_llm, post)
             x_metrics = post.metrics
+        elif is_bare_link(text) and not media_paths:
+            # A bare link without the post body would only produce an empty note.
+            await status.edit_text(x_fetch_failed_text(x_url), disable_web_page_preview=True)
+            return
     if structured is None:
         structured = await llm.structure(raw_for_llm)
         log.info("processing_route=ai message_id=%s", message.message_id)
