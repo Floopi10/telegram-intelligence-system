@@ -30,7 +30,8 @@ from offer_parser.knowledge_balance import classify_niches  # noqa: E402
 from offer_parser.twitter_niches import NICHE_ORDER, classify_twitter_niche  # noqa: E402
 from offer_parser.vacancy_filter import evaluate_vacancy, is_vacancy_text  # noqa: E402
 
-VERSION = "2.7"
+VERSION = "2.8"
+BOT_DIR = Path(os.environ.get("BOT_DIR", "/home/fluixoo/obsidian-telegram-bot"))
 # Viewer decisions live apart from the parser database, which this app opens read-only.
 STATE_DB = Path(os.environ.get("MINI_APP_STATE_DB", str(BASE_DIR / "data" / "state.db")))
 ITEM_ID_RE = re.compile(r"(?:tg:-?\d{1,20}:\d{1,12}|x:https://x\.com/[A-Za-z0-9_]{1,15}/status/\d{1,25})")
@@ -213,9 +214,12 @@ def load_dashboard() -> dict:
                 twitter.append({**_twitter_item(row), "tier": tier})
         twitter = twitter[:100]
         hidden = hidden_ids()
+        saved = saved_ids()
         vacancies = [item for item in vacancies if item["id"] not in hidden]
         knowledge = [item for item in knowledge if item["id"] not in hidden]
         twitter = [item for item in twitter if item["id"] not in hidden]
+        for item in (*vacancies, *knowledge, *twitter):
+            item["saved"] = item["id"] in saved
 
         decisions = {
             str(row["decision"]): int(row["amount"])
@@ -274,7 +278,102 @@ def _state() -> sqlite3.Connection:
     db.execute(
         "CREATE TABLE IF NOT EXISTS hidden (item_id TEXT PRIMARY KEY, hidden_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     )
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS saved (item_id TEXT PRIMARY KEY, note_path TEXT NOT NULL, "
+        "saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    )
     return db
+
+
+def saved_ids() -> dict[str, str]:
+    try:
+        with closing(_state()) as db:
+            return {row[0]: row[1] for row in db.execute("SELECT item_id, note_path FROM saved")}
+    except (sqlite3.Error, OSError):
+        return {}
+
+
+def find_item(item_id: str) -> dict | None:
+    with closing(_connect()) as db:
+        if item_id.startswith("tg:"):
+            _, chat_id, message_id = item_id.split(":")
+            row = db.execute(
+                """SELECT chat_id, message_id, text, score, source_url, chat_title, message_date, item_kind
+                FROM offers WHERE chat_id = ? AND message_id = ?""",
+                (int(chat_id), int(message_id)),
+            ).fetchone()
+            return _offer(row) if row else None
+        row = db.execute(
+            """SELECT canonical_url, author, chat_title, content_score, collected_at, published_at,
+            views, likes, reposts, replies, bookmarks, views_per_hour, strength_kind, strength_reason,
+            analysis_json FROM twitter_strength_candidates WHERE canonical_url = ?""",
+            (item_id[2:],),
+        ).fetchone()
+        return _twitter_item(row) if row else None
+
+
+METRIC_NAMES = (("views", "Просмотры"), ("likes", "Лайки"), ("reposts", "Репосты"),
+                ("replies", "Ответы"), ("bookmarks", "Закладки"))
+
+
+def machine_text(item: dict) -> str:
+    """The same message format the parser sends, so the bot's note builder handles it unchanged."""
+    if item.get("kind") == "twitter":
+        lines = [
+            "TWITTER INTELLIGENCE FROM TELEGRAM", "",
+            "Тип: Twitter Intelligence",
+            f"Чат: {item.get('source') or 'Radar'}",
+            f"X URL: {item['url']}",
+            f"AI score: {item['score']}/10",
+            f"Тема: {item.get('topic') or item['niche']}",
+            f"Хук: {item['title']}", "",
+            "Полный разбор:", item.get("full_text") or item.get("reason") or item["title"],
+        ]
+        if item.get("points"):
+            lines.extend(["", "Ключевые мысли:", *(f"- {point}" for point in item["points"])])
+        metrics = item.get("metrics") or {}
+        shown = [f"- {label}: {metrics[key]}" for key, label in METRIC_NAMES if metrics.get(key) is not None]
+        if shown:
+            lines.extend(["", "Реальные метрики X:", *shown])
+        lines.extend(["", "Цитата и источник:", item["url"]])
+    else:
+        kind = "Вакансия" if item.get("kind") == "vacancy" else "Знание"
+        lines = [
+            "KNOWLEDGE CANDIDATE FROM TELEGRAM", "",
+            f"Тип: {kind}",
+            f"Ниша: {item['niche']}",
+            f"Чат: {item.get('source') or 'Telegram'}",
+            f"Knowledge score: {item['score']}",
+            f"Источник: {item.get('url') or 'прямой ссылки нет'}", "",
+            "Оригинальный текст:", item.get("full_text") or item["text"],
+        ]
+    text = "\n".join(lines)
+    return text if len(text) <= 3900 else text[:3899] + "…"
+
+
+async def save_to_obsidian(item: dict) -> Path:
+    if str(BOT_DIR) not in sys.path:
+        sys.path.insert(0, str(BOT_DIR))
+    from types import SimpleNamespace
+
+    from machine_note import structure_machine_message
+    from parser import parse_post
+    from vault import Vault
+
+    vault_path = Path(os.environ["VAULT_PATH"]).expanduser()
+    inbox = vault_path / os.environ.get("INBOX_FOLDER", "Telegram")
+    settings = SimpleNamespace(
+        vault_path=vault_path, inbox_path=inbox,
+        attachments_folder=os.environ.get("ATTACHMENTS_FOLDER", "attachments"),
+        attachments_path=inbox / os.environ.get("ATTACHMENTS_FOLDER", "attachments"),
+        category_path=lambda category: inbox / category,
+    )
+    text = machine_text(item)
+    structured = structure_machine_message(text)
+    return await Vault(settings).save_note(
+        structured=structured, parsed=parse_post(text), media_paths=[],
+        source_url=item.get("url"), chat_title=item.get("source"), author=item.get("author"),
+    )
 
 
 def hidden_ids() -> set[str]:
@@ -334,6 +433,36 @@ async def hide(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def save(request: web.Request) -> web.Response:
+    try:
+        validate_init_data(request.headers.get("X-Telegram-Init-Data", ""))
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        return web.json_response({"error": str(error)}, status=401)
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return web.json_response({"error": "invalid_body"}, status=400)
+    item_id = str(body.get("id") or "") if isinstance(body, dict) else ""
+    if not ITEM_ID_RE.fullmatch(item_id):
+        return web.json_response({"error": "invalid_id"}, status=400)
+    existing = saved_ids().get(item_id)
+    if existing:
+        return web.json_response({"ok": True, "path": existing, "already": True})
+    try:
+        item = find_item(item_id)
+        if item is None:
+            return web.json_response({"error": "not_found"}, status=404)
+        note = await save_to_obsidian(item)
+        relative = note.relative_to(Path(os.environ["VAULT_PATH"]).expanduser()).as_posix()
+        with closing(_state()) as db:
+            db.execute("INSERT OR REPLACE INTO saved (item_id, note_path) VALUES (?, ?)", (item_id, relative))
+            db.commit()
+    except (sqlite3.Error, OSError, KeyError, ImportError) as error:
+        print(f"save to Obsidian failed for {item_id}: {error!r}", file=sys.stderr, flush=True)
+        return web.json_response({"error": "save_failed", "detail": type(error).__name__}, status=503)
+    return web.json_response({"ok": True, "path": relative})
+
+
 async def health(_: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "db": DB_PATH.exists(), "version": VERSION})
 
@@ -343,6 +472,7 @@ def create_app() -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/api/dashboard", dashboard)
     app.router.add_post("/api/hide", hide)
+    app.router.add_post("/api/save", save)
     app.router.add_get("/health", health)
     return app
 

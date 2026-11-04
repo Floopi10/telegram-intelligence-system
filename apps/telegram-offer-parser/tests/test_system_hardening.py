@@ -391,12 +391,28 @@ class PipelineTests(StorageCase):
         return [(row["decision"], row["reason"]) for row in rows]
 
     async def test_kept_post_is_queued_and_saved_before_delivery(self):
+        import os
+
         ai = SimpleNamespace(analyze=AsyncMock(return_value=analysis(score=9)))
         collector = SimpleNamespace(collect=AsyncMock(return_value=metrics()))
-        await self.pipeline(ai=ai, collector=collector).handle(event(URL, webpage=WEBPAGE))
+        with patch.dict(os.environ, {"OBSIDIAN_AUTOSAVE": "twitter,knowledge,vacancy"}):
+            pipeline = self.pipeline(ai=ai, collector=collector)
+        await pipeline.handle(event(URL, webpage=WEBPAGE))
         due = self.storage.outbox_due()
         self.assertEqual(len(due), 1)
         self.assertEqual(due[0]["target"], "bot")
+        self.assertTrue(self.storage.twitter_url_seen(URL))
+
+    async def test_by_default_x_posts_stay_in_radar(self):
+        import os
+
+        ai = SimpleNamespace(analyze=AsyncMock(return_value=analysis(score=9)))
+        collector = SimpleNamespace(collect=AsyncMock(return_value=metrics()))
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OBSIDIAN_AUTOSAVE", None)
+            pipeline = self.pipeline(ai=ai, collector=collector)
+        await pipeline.handle(event(URL, webpage=WEBPAGE))
+        self.assertEqual(self.storage.outbox_due(), [])
         self.assertTrue(self.storage.twitter_url_seen(URL))
 
     async def test_ai_failure_is_audited_and_url_can_retry(self):
@@ -456,8 +472,22 @@ class PipelineTests(StorageCase):
         self.assertEqual(ai.analyze.await_count, 1)
         self.assertIn(("duplicate", "canonical_url"), self.statuses())
 
-    async def test_knowledge_is_saved_and_queued(self):
-        pipeline = self.pipeline(ai=None)
+    async def test_knowledge_is_saved_but_not_sent_by_default(self):
+        import os
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OBSIDIAN_AUTOSAVE", None)
+            pipeline = self.pipeline(ai=None)
+        await pipeline.handle(event("Подробный разбор протокола и его токеномики"))
+        self.assertEqual(self.storage.outbox_due(), [])
+        saved = self.storage.connection.execute("SELECT COUNT(*) FROM offers WHERE item_kind='knowledge'").fetchone()[0]
+        self.assertEqual(saved, 1)
+
+    async def test_knowledge_is_sent_when_enabled(self):
+        import os
+
+        with patch.dict(os.environ, {"OBSIDIAN_AUTOSAVE": "knowledge"}):
+            pipeline = self.pipeline(ai=None)
         await pipeline.handle(event("Подробный разбор протокола и его токеномики"))
         self.assertEqual(len(self.storage.outbox_due()), 1)
 
@@ -570,6 +600,27 @@ class AIFilterTests(StorageCase):
         self.assertIn(("error", "ai_rate_limited"), self.statuses())
         self.assertIn(("ignored", "ai_cooldown"), self.statuses())
         self.assertFalse(self.storage.twitter_url_seen(URL))
+
+
+class KnowledgeNoiseTests(unittest.TestCase):
+    def test_digest_junk_is_noise(self):
+        from offer_parser.digest_guard import is_knowledge_noise
+
+        for text in (
+            "Запустили бота для взаимного актива в X Как начать: заходи в бота и жми /start",
+            "Hello, how are you? I'm handling Business Development (BD) operations at OrangeX, we can offer you",
+            "These members list related work: we just rolled out a solid partner campaign for Traders and KOLs",
+        ):
+            with self.subTest(text=text[:30]):
+                self.assertTrue(is_knowledge_noise(text))
+
+    def test_real_knowledge_is_kept(self):
+        from offer_parser.digest_guard import is_knowledge_noise
+
+        self.assertFalse(is_knowledge_noise(
+            "How BD teams at exchanges structure partner deals: rebates, volume tiers and KOL affiliate splits"
+        ))
+        self.assertFalse(is_knowledge_noise("Обещал вам пару фишек по работе с иксом в 26 году, начну с главного"))
 
 
 class StatusUrlTests(unittest.TestCase):

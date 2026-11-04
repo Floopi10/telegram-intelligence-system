@@ -19,6 +19,15 @@ sys.path.insert(0, str(ROOT / "apps/miniapp"))
 
 import app  # noqa: E402
 
+try:
+    import aiofiles  # noqa: F401
+    import openai  # noqa: F401
+    import slugify  # noqa: F401
+
+    BOT_DEPS = True
+except ImportError:
+    BOT_DEPS = False
+
 
 def signed(user_id: int, auth_date: int | None = None) -> str:
     values = {"auth_date": str(auth_date or int(time.time())), "user": json.dumps({"id": user_id})}
@@ -168,6 +177,43 @@ class HiddenTests(unittest.IsolatedAsyncioTestCase):
             data = app.load_dashboard()
         self.assertEqual(len(data["knowledge"]), 2)
         self.assertEqual(data["hidden_count"], 0)
+
+    @unittest.skipUnless(BOT_DEPS, "Obsidian bot dependencies are not installed")
+    async def test_save_to_obsidian_once(self):
+        from unittest.mock import patch
+
+        vault = Path(self.temp.name) / "vault"
+        (vault / "Telegram").mkdir(parents=True)
+        env = {"VAULT_PATH": str(vault), "BOT_DIR": str(ROOT / "apps/obsidian-bot")}
+        with patch.dict(os.environ, env), patch.object(app, "BOT_DIR", ROOT / "apps/obsidian-bot"):
+            first = await self.client.post("/api/save", json={"id": "tg:-100:1"},
+                                           headers={"X-Telegram-Init-Data": signed(42)})
+            second = await self.client.post("/api/save", json={"id": "tg:-100:1"},
+                                            headers={"X-Telegram-Init-Data": signed(42)})
+        self.assertEqual(first.status, 200)
+        path = (await first.json())["path"]
+        self.assertTrue(path.startswith("Telegram/"))
+        note = (vault / path).read_text(encoding="utf-8")
+        self.assertIn("Разбор токеномики", note)
+        self.assertTrue((await second.json())["already"])
+        self.assertEqual(len(list(vault.rglob("*.md"))), 1)
+        saved = {item["id"]: item["saved"] for item in app.load_dashboard()["knowledge"]}
+        self.assertEqual(saved, {"tg:-100:1": True, "tg:-100:2": False})
+
+    async def test_save_rejects_strangers_and_unknown_items(self):
+        self.assertEqual((await self.client.post("/api/save", json={"id": "tg:-100:1"},
+                                                 headers={"X-Telegram-Init-Data": signed(7)})).status, 401)
+        self.assertEqual((await self.post({"id": "tg:-100:1"})).status, 200)
+        missing = await self.client.post("/api/save", json={"id": "tg:-100:999"},
+                                         headers={"X-Telegram-Init-Data": signed(42)})
+        self.assertEqual(missing.status, 404)
+
+    def test_machine_text_carries_x_metrics(self):
+        item = app._twitter_item(twitter_row({"hook": "Robot bee", "analysis_ru": "Разбор", "key_points": ["A"]}))
+        text = app.machine_text(item)
+        self.assertTrue(text.startswith("TWITTER INTELLIGENCE FROM TELEGRAM"))
+        self.assertIn("Реальные метрики X:\n- Просмотры: 1200", text)
+        self.assertIn("Ключевые мысли:\n- A", text)
 
     def test_x_ids_are_accepted(self):
         self.assertTrue(app.ITEM_ID_RE.fullmatch("x:https://x.com/Some_User/status/2116898898019020879"))
