@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from capture import append_line, classify, format_line, remove_line, target_path  # noqa: E402
 
+MSK = timezone(timedelta(hours=3))
 NOV_4 = datetime(2026, 11, 4, 15, 0)
 NOV_5 = datetime(2026, 11, 5, 9, 0)
 
@@ -86,6 +87,65 @@ class WriteTests(unittest.TestCase):
         self.assertFalse(remove_line(path, "- [ ] missing"))
 
 
+class QueueTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.vault = Path(self.temp.name)
+        self.ledger = self.vault.parent / f"{self.vault.name}-ledger.txt"
+
+    def tearDown(self):
+        self.temp.cleanup()
+        self.ledger.unlink(missing_ok=True)
+
+    def merge(self, now):
+        from merge_queue import merge
+
+        return merge(self.vault, self.ledger, now)
+
+    def test_merge_appends_in_vault_format_and_clears_queue(self):
+        from capture import QUEUE_DIR, write_queue_entry
+
+        month = self.vault / "Месяца/Ноябрь.md"
+        month.parent.mkdir(parents=True)
+        month.write_text("снег первый 03.11\n", encoding="utf-8")
+        created = datetime(2026, 11, 4, 12, 0, tzinfo=MSK)
+        write_queue_entry(self.vault, "a1", "log", "оплатил Claude", created)
+        write_queue_entry(self.vault, "a2", "task", "купить прокси", created)
+        counts = self.merge(created + timedelta(minutes=30))
+        self.assertEqual(counts["merged"], 2)
+        self.assertEqual(month.read_text(encoding="utf-8"), "снег первый 03.11\n\nоплатил Claude 04.11\n")
+        self.assertIn("- [ ] купить прокси ➕ 2026-11-04", (self.vault / "00 Inbox/Задачи.md").read_text(encoding="utf-8"))
+        self.assertEqual(list((self.vault / QUEUE_DIR).glob("*.json")), [])
+
+    def test_fresh_entries_wait_for_buttons(self):
+        from capture import write_queue_entry
+
+        created = datetime(2026, 11, 4, 12, 0, tzinfo=MSK)
+        write_queue_entry(self.vault, "b1", "log", "тест", created)
+        self.assertEqual(self.merge(created + timedelta(minutes=2))["waiting"], 1)
+        self.assertFalse((self.vault / "Месяца").exists())
+
+    def test_redelivered_entry_is_not_duplicated(self):
+        from capture import write_queue_entry
+
+        created = datetime(2026, 11, 4, 12, 0, tzinfo=MSK)
+        write_queue_entry(self.vault, "c1", "idea", "бот для мемов", created)
+        self.merge(created + timedelta(hours=1))
+        write_queue_entry(self.vault, "c1", "task", "бот для мемов", created)
+        counts = self.merge(created + timedelta(hours=2))
+        self.assertEqual(counts["skipped"], 1)
+        self.assertFalse((self.vault / "00 Inbox/Задачи.md").exists())
+        self.assertEqual((self.vault / "00 Inbox/Идеи.md").read_text(encoding="utf-8").count("бот для мемов"), 1)
+
+    def test_firsay_idea_falls_back_when_note_is_missing(self):
+        from capture import write_queue_entry
+
+        created = datetime(2026, 11, 4, 12, 0, tzinfo=MSK)
+        write_queue_entry(self.vault, "d1", "idea", "Firsay идея: таблица", created)
+        self.merge(created + timedelta(hours=1))
+        self.assertIn("Firsay идея: таблица", (self.vault / "00 Inbox/Идеи.md").read_text(encoding="utf-8"))
+
+
 class BotCaptureTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         import bot
@@ -114,44 +174,45 @@ class BotCaptureTests(unittest.IsolatedAsyncioTestCase):
             await self.bot.on_single_message(message, self.settings, None, None, None, None)
         return process
 
-    async def test_own_line_goes_to_the_month_note(self):
+    def queued(self):
+        from capture import QUEUE_DIR, read_queue_entry
+
+        return [read_queue_entry(path) for path in sorted((self.settings.vault_path / QUEUE_DIR).glob("*.json"))]
+
+    def callback(self, data, user_id=42):
+        return SimpleNamespace(data=data, from_user=SimpleNamespace(id=user_id),
+                               message=SimpleNamespace(edit_text=AsyncMock(), message_id=1), answer=AsyncMock())
+
+    async def test_own_line_is_queued_not_written_to_the_vault(self):
         message = self.message("оплатил Claude")
         process = await self.send(message)
         process.assert_not_awaited()
-        month = next((self.settings.vault_path / "Месяца").glob("*.md"))
-        self.assertIn("оплатил Claude ", month.read_text(encoding="utf-8"))
-        self.assertIn("В дневник", message.answer.await_args.args[0])
+        self.assertEqual([(e["kind"], e["text"]) for e in self.queued()], [("log", "оплатил Claude")])
+        self.assertFalse((self.settings.vault_path / "Месяца").exists())
+        reply = message.answer.await_args.args[0]
+        self.assertIn("В дневник", reply)
+        self.assertIn("Месяца/", reply)
 
     async def test_forwarded_text_keeps_the_note_flow(self):
         process = await self.send(self.message("оплатил Claude", forward_date=datetime(2026, 11, 4)))
         process.assert_awaited_once()
-        self.assertFalse((self.settings.vault_path / "Месяца").exists())
+        self.assertEqual(self.queued(), [])
 
     async def test_switch_kind_and_undo(self):
-        message = self.message("купить прокси")
-        await self.send(message)
-        tasks = self.settings.vault_path / "00 Inbox/Задачи.md"
-        self.assertIn("- [ ] купить прокси", tasks.read_text(encoding="utf-8"))
-        token = next(reversed(self.bot._captures))
-        callback = SimpleNamespace(data=f"cap:{token}:idea", from_user=SimpleNamespace(id=42),
-                                   message=SimpleNamespace(edit_text=AsyncMock(), message_id=1), answer=AsyncMock())
-        await self.bot.on_capture_action(callback, self.settings, None, None, None)
-        self.assertNotIn("купить прокси", tasks.read_text(encoding="utf-8"))
-        ideas = self.settings.vault_path / "00 Inbox/Идеи.md"
-        self.assertIn("- купить прокси (", ideas.read_text(encoding="utf-8"))
-        callback.data = f"cap:{token}:undo"
-        await self.bot.on_capture_action(callback, self.settings, None, None, None)
-        self.assertNotIn("купить прокси", ideas.read_text(encoding="utf-8"))
-
-    async def test_stranger_cannot_move_lines(self):
         await self.send(self.message("купить прокси"))
         token = next(reversed(self.bot._captures))
-        callback = SimpleNamespace(data=f"cap:{token}:undo", from_user=SimpleNamespace(id=7),
-                                   message=SimpleNamespace(edit_text=AsyncMock()), answer=AsyncMock())
-        await self.bot.on_capture_action(callback, self.settings, None, None, None)
-        tasks = self.settings.vault_path / "00 Inbox/Задачи.md"
-        self.assertIn("купить прокси", tasks.read_text(encoding="utf-8"))
+        await self.bot.on_capture_action(self.callback(f"cap:{token}:idea"), self.settings, None, None, None)
+        self.assertEqual([(e["kind"], e["id"]) for e in self.queued()], [("idea", token)])
+        await self.bot.on_capture_action(self.callback(f"cap:{token}:undo"), self.settings, None, None, None)
+        self.assertEqual(self.queued(), [])
+
+    async def test_stranger_cannot_change_entries(self):
+        await self.send(self.message("купить прокси"))
+        token = next(reversed(self.bot._captures))
+        await self.bot.on_capture_action(self.callback(f"cap:{token}:undo", user_id=7), self.settings, None, None, None)
+        self.assertEqual(len(self.queued()), 1)
 
 
 if __name__ == "__main__":
+
     unittest.main()
