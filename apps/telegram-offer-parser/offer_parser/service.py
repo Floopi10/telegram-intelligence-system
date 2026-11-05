@@ -17,6 +17,7 @@ from .config import Settings
 from .exclusions import filter_excluded
 from .digest import daily_digest_loop, send_daily_digest_once
 from .firsay_feed import FeedConfig, firsay_feed_loop
+from .health_report import build_report, health_report_loop, report_hour
 from .outbox import outbox_loop
 from .matcher import MatchResult, OfferMatcher
 from .storage import OfferRecord, Storage
@@ -278,6 +279,9 @@ class MessagePipeline:
             return
         offer = await _build_offer(event, self.selected_by_id[event.chat_id], result)
         if self.storage.save(offer):
+            if self.knowledge_storage is not None and self.knowledge_storage is not self.storage:
+                # The Radar mini app reads the knowledge DB: keep a copy for its "Офферы" tab.
+                self.knowledge_storage.save(offer, kind="offer")
             self.storage.enqueue_message(
                 dedupe_key=f"offer:{offer.chat_id}:{offer.message_id}",
                 target=self.settings.notify_target,
@@ -624,10 +628,29 @@ async def monitor(settings: Settings) -> None:
             [item for item in (storage, knowledge_storage) if item is not None],
         ))
     ]
+    if knowledge_storage is not None:
+        copied = storage.copy_recent_offers(knowledge_storage)
+        if copied:
+            LOGGER.info("Офферы за 7 дней скопированы в Radar: %s", copied)
     feed_config = FeedConfig.from_env(settings.knowledge_database_path.parent) if knowledge_storage is not None else None
     if feed_config is not None:
         background.append(asyncio.create_task(firsay_feed_loop(pipeline, feed_config)))
     digest_enabled = settings.daily_digest_enabled and knowledge_storage is not None
+    health_hour = report_hour()
+    if knowledge_storage is not None and 0 <= health_hour <= 23:
+        data_dir = settings.knowledge_database_path.parent
+        background.append(asyncio.create_task(health_report_loop(
+            knowledge_storage,
+            target=os.getenv("HEALTH_REPORT_TARGET", "").strip() or settings.daily_digest_target,
+            hour_msk=health_hour,
+            build=lambda: build_report(
+                knowledge_db=settings.knowledge_database_path,
+                offers_db=settings.database_path,
+                metrics_db=data_dir / "x_metrics.db",
+                firsay_enabled=feed_config is not None,
+                digest_hour=settings.daily_digest_hour_msk,
+            ),
+        )))
     if digest_enabled:
         background.append(asyncio.create_task(
             daily_digest_loop(
@@ -684,6 +707,7 @@ async def monitor(settings: Settings) -> None:
         )
         + (f", digest={settings.daily_digest_hour_msk:02d}:00 MSK→{settings.daily_digest_target}" if digest_enabled else ", digest=off")
         + (", firsay_feed=on" if feed_config is not None else ", firsay_feed=off")
+        + (f", health={health_hour:02d}:00 MSK" if knowledge_storage is not None and 0 <= health_hour <= 23 else ", health=off")
         + ". Для остановки нажми Ctrl+C."
     )
     try:
