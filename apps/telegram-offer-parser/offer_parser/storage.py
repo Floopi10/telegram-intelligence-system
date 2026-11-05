@@ -192,6 +192,24 @@ class Storage:
         self.connection.execute("DELETE FROM semantic_items WHERE created_at < datetime('now', '-30 days')")
         self.connection.commit()
 
+    def copy_recent_offers(self, target: "Storage", days: int = 7) -> int:
+        """One-time fill of the Radar "Офферы" tab (target = knowledge DB) with recent offers."""
+        rows = self.connection.execute(
+            """SELECT chat_id, message_id, chat_title, sender_id, sender_name, message_date, text, score,
+                      matched_rules, compensation, source_url
+               FROM offers WHERE created_at >= datetime('now', ?)""",
+            (f"-{days} days",),
+        ).fetchall()
+        copied = 0
+        for row in rows:
+            record = OfferRecord(
+                chat_id=row[0], message_id=row[1], chat_title=row[2], sender_id=row[3], sender_name=row[4],
+                message_date=datetime.fromisoformat(str(row[5])), text=row[6], score=row[7],
+                matched_rules=row[8], compensation=row[9], source_url=row[10],
+            )
+            copied += bool(target.save(record, kind="offer"))
+        return copied
+
     def save(self, offer: OfferRecord, kind: str = "knowledge") -> bool:
         cursor = self.connection.execute(
             """
