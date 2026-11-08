@@ -34,6 +34,10 @@ class NewRadarNichesTest(unittest.TestCase):
         self.assertFalse(is_twitter_radar_noise("poker drama: betting the house on one hand"))
         self.assertTrue(is_twitter_radar_noise("today's parlay and bet slip"))
 
+    def test_adult_reference_accounts(self):
+        for handle in ("mason33xbt", "0xAikor", "me_barnyx", "0xrayber", "DonatelloXpro"):
+            self.assertEqual(classify_twitter_niche(f"https://x.com/{handle}/status/1 new drop"), "18+", handle)
+
     def test_physics_goes_to_math(self):
         self.assertEqual(classify_twitter_niche("физика для школьников за 5 минут"), "Математика")
 

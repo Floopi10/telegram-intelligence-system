@@ -39,6 +39,9 @@ REFERENCE_ACCOUNT_NICHES: dict[str, str] = {
     **{handle: "Роботы" for handle in (
         "0xforge", "shred_0x", "yurash1104", "timdaugs", "fuzzyxbt",
     )},
+    **{handle: "18+" for handle in (
+        "mason33xbt", "0xaikor", "me_barnyx", "0xrayber", "donatelloxpro",
+    )},
     **{handle: "Стримы" for handle in (
         "colehayes28", "0xtreexyzz", "dn_degen", "sovyre", "athenari0",
         "studiolineui", "s1ta10",
