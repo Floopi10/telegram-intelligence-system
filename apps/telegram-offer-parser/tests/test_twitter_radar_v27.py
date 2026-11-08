@@ -54,7 +54,7 @@ class TwitterRadarTests(unittest.TestCase):
         for url, expected in examples.items():
             with self.subTest(url=url):
                 self.assertEqual(classify_twitter_niche(url, "example post"), expected)
-        self.assertEqual(len(REFERENCE_ACCOUNT_NICHES), 43)
+        self.assertEqual(len(REFERENCE_ACCOUNT_NICHES), 48)
 
     def test_specific_niches_win_over_broad_keywords(self):
         self.assertEqual(
