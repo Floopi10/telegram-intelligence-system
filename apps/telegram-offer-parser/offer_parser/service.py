@@ -17,6 +17,7 @@ from .config import Settings
 from .exclusions import filter_excluded
 from .digest import daily_digest_loop, send_daily_digest_once
 from .firsay_feed import FeedConfig, firsay_feed_loop
+from .kol_pipeline import process_kol
 from .health_report import build_report, health_report_loop, report_hour
 from .outbox import outbox_loop
 from .matcher import MatchResult, OfferMatcher
@@ -242,7 +243,12 @@ class MessagePipeline:
         text = event.raw_text.strip()
         if not text:
             return
-        if event.chat_id in self.selected_by_id:
+        title = self.selected_by_id.get(event.chat_id) or self.knowledge_by_id.get(event.chat_id)
+        kol = False
+        if title is not None:
+            kol = await self._kol(event, text, title)
+        if event.chat_id in self.selected_by_id and not kol:
+            # A KOL offer is already sent in its own format; do not send it twice.
             await self._guarded(self._handle_offer, self.storage, "offer", event, text)
         if (
             event.chat_id in self.knowledge_by_id
@@ -250,6 +256,15 @@ class MessagePipeline:
             and self.knowledge_storage is not None
         ):
             await self._guarded(self._handle_knowledge, self.knowledge_storage, "knowledge", event, text)
+
+    async def _kol(self, event, text: str, title: str) -> bool:
+        try:
+            return await process_kol(self, event, text, title)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.exception("KOL-фильтр упал на сообщении %s/%s", event.chat_id, event.id)
+            return False
 
     async def _guarded(self, handler, storage: Storage, stream: str, event, text: str) -> None:
         try:
