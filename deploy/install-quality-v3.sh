@@ -39,6 +39,7 @@ FILES=(
   tests/test_firsay_feed.py
   tests/test_health_report.py
   tests/test_kol_offers.py
+  tests/test_kol_chats.py
 )
 
 [[ $EUID -eq 0 ]] || exec sudo --preserve-env=PROJECT_DIR,SERVICE_NAME,SERVICE_USER "$0" "$@"
