@@ -10,10 +10,14 @@ from unittest.mock import AsyncMock, patch
 
 from offer_parser.storage import Storage
 
+# The tool lives in the repo's tools/ folder; the server deploy copies only the parser,
+# so the tool tests run in CI and are skipped on the server.
 TOOL = Path(__file__).resolve().parents[3] / "tools" / "scan_kol_offers.py"
-spec = importlib.util.spec_from_file_location("scan_kol_offers", TOOL)
-scan_tool = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(scan_tool)
+scan_tool = None
+if TOOL.exists():
+    spec = importlib.util.spec_from_file_location("scan_kol_offers", TOOL)
+    scan_tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scan_tool)
 
 JOB_AD = (
     "📢 Community Manager, Korea\n🏢 Aptos Foundation\n📍 Remote / Worldwide\n💼 Job type: Full Time\n"
@@ -22,6 +26,7 @@ JOB_AD = (
 KOL_ASK = "Gm guys Need x Kols 18 send me links 3$ Each post"
 
 
+@unittest.skipIf(scan_tool is None, "tools/scan_kol_offers.py is not deployed here")
 class ScanToolTest(unittest.TestCase):
     def test_read_ids_and_links(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -31,6 +36,15 @@ class ScanToolTest(unittest.TestCase):
             self.assertEqual(scan_tool.read_ids(Path(directory) / "missing.csv"), set())
         self.assertEqual(scan_tool.message_url(-1009, None, 5), "https://t.me/c/9/5")
         self.assertEqual(scan_tool.message_url(-1009, "kolhub", 5), "https://t.me/kolhub/5")
+
+    def test_only_groups_are_kept(self):
+        group = SimpleNamespace(megagroup=True, broadcast=True)
+        chat = SimpleNamespace(megagroup=False, broadcast=False, title="Old group")
+        channel = SimpleNamespace(megagroup=False, broadcast=True)
+        person = SimpleNamespace(first_name="Eugene", bot=False)
+        bot = SimpleNamespace(first_name="Open Offers", bot=True)
+        self.assertEqual([scan_tool.is_group(x) for x in (group, chat, channel, person, bot, None)],
+                         [True, True, False, False, False, False])
 
 
 @unittest.skipUnless(importlib.util.find_spec("telethon"), "telethon is not installed")

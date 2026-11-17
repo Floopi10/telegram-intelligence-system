@@ -49,6 +49,15 @@ def read_ids(path: Path) -> set[int]:
         }
 
 
+def is_group(chat) -> bool:
+    """Groups and supergroups only: global search also returns private dialogs, bots and channels."""
+    if chat is None or hasattr(chat, "first_name") or getattr(chat, "bot", False):
+        return False
+    if getattr(chat, "broadcast", False) and not getattr(chat, "megagroup", False):
+        return False
+    return True
+
+
 def message_url(chat_id: int, username: str | None, message_id: int) -> str:
     if username:
         return f"https://t.me/{username}/{message_id}"
@@ -95,8 +104,8 @@ async def scan(args: argparse.Namespace) -> int:
                         if not offer.is_offer:
                             continue
                         chat = message.chat
-                        if getattr(chat, "broadcast", False) and not getattr(chat, "megagroup", False):
-                            continue  # channels post news, not asks
+                        if not is_group(chat):
+                            continue  # private dialogs, bots and channels are not offer groups
                         username = getattr(chat, "username", None)
                         chats.setdefault(message.chat_id, {
                             "chat_id": message.chat_id, "title": get_display_name(chat) if chat else str(message.chat_id),
