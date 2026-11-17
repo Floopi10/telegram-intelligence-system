@@ -76,6 +76,7 @@ class ConfigTest(unittest.TestCase):
         self.assertIn("route=intel-export", cfg.url)
 
 
+@patch.dict("os.environ", {"FIRSAY_FEED_MODE": "legacy"})
 class PullTest(unittest.IsolatedAsyncioTestCase):
     async def test_pages_until_done_and_saves_the_cursor(self):
         pages = [
@@ -118,6 +119,7 @@ class PullTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(read_cursor(cfg.cursor_path), "xxx")
 
 
+@patch.dict("os.environ", {"FIRSAY_FEED_MODE": "legacy"})
 class OfferTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -163,6 +165,7 @@ class OfferTest(unittest.IsolatedAsyncioTestCase):
 
 
 @unittest.skipUnless(importlib.util.find_spec("telethon"), "telethon is not installed")
+@patch.dict("os.environ", {"FIRSAY_FEED_MODE": "legacy"})
 class RealPipelineTest(unittest.IsolatedAsyncioTestCase):
     async def test_feed_message_lands_in_the_knowledge_store_with_its_link(self):
         from offer_parser.service import MessagePipeline

@@ -197,6 +197,16 @@ async def handle_offer(pipeline, event, title: str, result, notify_limit: int) -
 
 
 async def handle_item(pipeline, event, title: str, notify_limit: int) -> None:
+    # Only KOL offers are taken from Firsay: its old offer and knowledge routes brought
+    # service sellers and ate the knowledge limit (2026-11-08).
+    from .kol_pipeline import process_kol
+
+    if os.getenv("FIRSAY_FEED_MODE", "kol").strip() == "kol":
+        await pipeline._guarded(
+            lambda ev, text: process_kol(pipeline, ev, text, title),
+            pipeline.knowledge_storage, "kol_offer", event, event.raw_text,
+        )
+        return
     result = pipeline.matcher.evaluate(event.raw_text)
     if result.score >= pipeline.settings.min_score:
         await pipeline._guarded(
