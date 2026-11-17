@@ -7,6 +7,7 @@ import re
 import time
 from contextlib import suppress
 from datetime import datetime, timezone
+from pathlib import Path
 
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
@@ -216,9 +217,15 @@ class MessagePipeline:
         twitter_priority_by_id: dict[int, TwitterPrioritySource],
         twitter_ai: TwitterAIClient | None,
         twitter_strength: XCollectorClient | None,
+        kol_by_id: dict[int, str] | None = None,
     ) -> None:
         self.settings = settings
         self.selected_by_id = selected_by_id
+        # Chats read only for KOL offers (data/kol_chats.csv): no knowledge, no old offer rules.
+        self.kol_by_id = kol_by_id or {}
+        # The old rules.json offer stream sent job ads ("Community Manager, Korea") as offers;
+        # KOL offers replace it. LEGACY_OFFERS=1 brings it back.
+        self._legacy_offers = os.getenv("LEGACY_OFFERS", "0").strip() == "1"
         self.matcher = matcher
         self.storage = storage
         self.knowledge_by_id = knowledge_by_id
@@ -243,11 +250,15 @@ class MessagePipeline:
         text = event.raw_text.strip()
         if not text:
             return
-        title = self.selected_by_id.get(event.chat_id) or self.knowledge_by_id.get(event.chat_id)
+        title = (
+            self.selected_by_id.get(event.chat_id)
+            or self.knowledge_by_id.get(event.chat_id)
+            or self.kol_by_id.get(event.chat_id)
+        )
         kol = False
         if title is not None:
             kol = await self._kol(event, text, title)
-        if event.chat_id in self.selected_by_id and not kol:
+        if event.chat_id in self.selected_by_id and not kol and self._legacy_offers:
             # A KOL offer is already sent in its own format; do not send it twice.
             await self._guarded(self._handle_offer, self.storage, "offer", event, text)
         if (
@@ -622,6 +633,10 @@ async def monitor(settings: Settings) -> None:
             ", ".join(unavailable_priority),
         )
 
+    kol_file = Path(os.getenv("KOL_CHATS_FILE", str(settings.knowledge_database_path.parent / "kol_chats.csv")))
+    kol_selected = load_selected(kol_file) if kol_file.exists() else []
+    kol_by_id = {chat.chat_id: chat.title for chat in kol_selected}
+
     pipeline = MessagePipeline(
         settings=settings,
         selected_by_id=selected_by_id,
@@ -633,6 +648,7 @@ async def monitor(settings: Settings) -> None:
         twitter_priority_by_id=twitter_priority_by_id,
         twitter_ai=twitter_ai,
         twitter_strength=twitter_strength,
+        kol_by_id=kol_by_id,
     )
 
     client = make_client(settings)
@@ -677,6 +693,7 @@ async def monitor(settings: Settings) -> None:
 
     all_selected = {chat.chat_id: chat for chat in selected}
     all_selected.update({chat.chat_id: chat for chat in knowledge_selected})
+    all_selected.update({chat.chat_id: chat for chat in kol_selected if chat.chat_id not in all_selected})
     available_entities = []
     for chat in all_selected.values():
         try:
@@ -722,6 +739,7 @@ async def monitor(settings: Settings) -> None:
         )
         + (f", digest={settings.daily_digest_hour_msk:02d}:00 MSK→{settings.daily_digest_target}" if digest_enabled else ", digest=off")
         + (", firsay_feed=on" if feed_config is not None else ", firsay_feed=off")
+        + f", kol_chats={len(kol_by_id)}, legacy_offers={'on' if pipeline._legacy_offers else 'off'}"
         + (f", health={health_hour:02d}:00 MSK" if knowledge_storage is not None and 0 <= health_hour <= 23 else ", health=off")
         + ". Для остановки нажми Ctrl+C."
     )
