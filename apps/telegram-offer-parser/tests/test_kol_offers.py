@@ -37,6 +37,26 @@ NOT_OFFERS = [
     "Тебе не нужен сразу огромный аккаунт и куча подписчиков. Нужен нормальный старт и немного терпения.",
     "Connect your wallet to claim your airdrop, looking for KOLs to share it",
     "gm everyone, how is the market today",
+    # real misses from the 30-day Firsay dump (2026-11-17)
+    "If you’re looking for KOLs Top, middle, low tier KOLs Across X, YouTube, Telegram DM",
+    "Hello guys I have kols agency which have 30+ channels 15+ twitter account If you need promotion DM me",
+    "Hello! I'm a KOLs Manager. I have top quality KOLs. If you are interested in any KOLs post promotion DM me",
+    "Hey Web3 fam. I'm helping a friend who's looking for solid promoters & KOLs. Offer: 500 USDT funding to start "
+    "the account + weekly salary + good benefits. Interested?",
+    "Hi guys, I am looking for KOLs willing to join affiliate program with WEEX, best deals. Pls DM if interested.",
+    "Hello, we are looking for KOL and brands who will test our app. For tester we will compensate you with our native token.",
+    "Hello KOLs. We are selling Channel Ad Clicks Price - 1.2$/1000 clicks Anybody interested please dm.",
+    "Scam, they need twitter campign and make some KOL post about promotion but not make payment after post",
+    "Ищу KOLs для продвижения на амбассадорских условиях проекта TONxDAO Подробности в лс",
+]
+
+REAL_FIRSAY_OFFERS = [
+    "Gm guys Need x Kols 18 send me links 3$ Each post",
+    "i need kols x account paid $10-30$ per post pls joined here : https://t.me/+Ax61fel6johkMGY1 before join.",
+    "Looking for meme KOLs $5 per post to promote CrawlHive Interested? DM me",
+    "Hey guys i have deal for twitter or X Per Kol will get 15$ Invite your friends I need 50 kol Drop your Kols",
+    "GM everyone! We’re looking for KOLs to collaborate on X for a DeFi project. - Budget: under $50 per post",
+    "Hello, I need KOL from the following countries: Indonesia, Malaysia, Thailand. Other countries please don't DM me.",
 ]
 
 
@@ -44,6 +64,10 @@ class DetectTest(unittest.TestCase):
     def test_owner_examples_are_offers(self):
         for text in OFFERS:
             self.assertTrue(detect(text).is_offer, text[:40])
+
+    def test_real_firsay_offers(self):
+        for text in REAL_FIRSAY_OFFERS:
+            self.assertTrue(detect(text).is_offer, text[:50])
 
     def test_sellers_spam_and_guides_are_not(self):
         for text in NOT_OFFERS:

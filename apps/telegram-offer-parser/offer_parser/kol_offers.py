@@ -55,12 +55,36 @@ SELLER = tuple(re.compile(p, re.IGNORECASE) for p in (
     r"\b(?:available for|open for|accepting)\s+(?:promos?|paid|collabs?|partnerships?|deals?)\b",
     r"\bhire me\b|\bdm (?:me )?for (?:promo|promotion|rates|price)\b",
     r"\btarget:\s*\$",
+    # "If you need KOLs, DM me" is an agency selling KOLs, not a buyer.
+    r"\bif (?:you|u|your project)\s+(?:need|are looking for|looking for|want)\b|\bif you're (?:looking|in need|searching)\b",
+    r"\bi (?:have|got|manage|run)\s+(?:a |an |the )?(?:kols?|large|big|huge|network|team|agency|top|quality|genuine|\d+)",
+    r"\bkols?\s+(?:agency|manager|network)\b(?![^.\n]{0,40}\bwho\b)",
+    r"\bi(?:'m| am) (?:the |a )?kols?'? ?manager\b",
+    r"\b(?:we are|we're|i am|i'm)\s+selling\b|\bselling\b[^.\n]{0,20}\b(?:clicks|ads?|posts?|accounts?)\b",
+    r"\bi (?:pull|bring|can bring|generate)\b",
+    r"\bmy (?:\w+ ){0,2}kols\b|\bonboard my\b|\bi have (?:lots|plenty|many) of\b",
+    r"\b(?:one of the best|cheapest) kols?\b|\bkols? (?:matching )?platform\b|\blooking for agencies\b",
+    r"\bif you're (?:organizing|tired|running|launching)\b",
+    r"\bi'm \w+,? (?:a |the )?(?:creator|founder|host)\b|\bi'd love to discuss a paid\b",
     r"\bпредлагаю\b|\bмои услуги\b|\bмой канал\b|\bпродвижение (?:вашего|вашей|ваших|проекта)\b|\bраскручу\b|\bоткрыт(?:а)? к сотрудничеству\b",
 ))
 
 SCAM = tuple(re.compile(p, re.IGNORECASE) for p in (
-    r"\bguaranteed (?:profit|returns?)\b", r"\bconnect (?:your )?wallet\b", r"\bclaim (?:your )?(?:airdrop|reward)\b",
+    r"\bguaranteed\b", r"\bdon't miss\b", r"\bgood entry\b", r"\bconnect (?:your )?wallet\b", r"\bclaim (?:your )?(?:airdrop|reward)\b",
     r"\bsend (?:me )?\d+\s*(?:usdt|\$)\b", r"\bdouble your\b", r"\bpump signal", r"\bгарантирован\w+ (?:доход|прибыл)",
+))
+
+# Not a paid KOL gig: jobs, salary bait, affiliate/commission deals, token or "ambassador
+# terms" pay, giveaways, testers, scam warnings.
+NOT_A_GIG = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"\bweekly salary\b|\bfunding to start\b|\bper hour\b|/hour\b|\bget paid \$?\d+\s*-?\s*\$?\d*\s*/\s*week\b",
+    r"\bopen roles?\b|\bfull[- ]time\b|\bpart[- ]time\b|\b(?:ft|pt) (?:or|/) (?:pt|ft)\b|\bjob opening\b",
+    r"\bbeta testers?\b|\bfeedback form\b|\btesters?\b",
+    r"\baffiliates?\b|\breferral (?:partnership|program|link)\b|\bcommissions?\b|\brebates?\b|\brev(?:enue)? ?share\b|\bpartner program\b",
+    r"\bcontest\b|\bleaderboard\b|\bcompetition\b|\bsticker\b|\bpublic sales?\b|\bpresale\b|\bwhitelist\b|\bguest signup\b|\bspaces ama\b",
+    r"\b(?:compensate|pay|paid)\b[^.\n]{0,30}\b(?:native |our )?tokens?\b|\bамбассадорских условиях\b|\bза токены\b",
+    r"\bgiveaway\b|\bраздача\b|\bрозыгрыш\b",
+    r"\bscam(?:mer|mers)?\b|\bскам\b|\bкидал",
 ))
 
 NEGATED_RU = re.compile(r"\bне\s+(?:нужн|ищ|требу)", re.IGNORECASE)
@@ -101,13 +125,16 @@ class KolOffer:
 
 
 def detect(text: str) -> KolOffer:
-    clean = " ".join(str(text or "").split())
+    # Curly apostrophes ("you’re") would slip past the seller rules.
+    clean = " ".join(str(text or "").replace("’", "'").replace("‘", "'").split())
     if len(clean) < 20:
         return KolOffer(False, "too_short")
     if any(p.search(clean) for p in SCAM):
         return KolOffer(False, "scam")
     if any(p.search(clean) for p in SELLER):
         return KolOffer(False, "seller")
+    if any(p.search(clean) for p in NOT_A_GIG):
+        return KolOffer(False, "not_a_gig")
     demand = [p.pattern[:40] for p in DEMAND if p.search(clean)]
     pay = PAY_RE.search(clean)
     if demand and len(demand) == 1 and NEGATED_RU.search(clean) and not pay:
