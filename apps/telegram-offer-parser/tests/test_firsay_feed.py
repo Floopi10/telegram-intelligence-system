@@ -47,6 +47,39 @@ class FakePipeline:
         await handler(event, text)
 
 
+class FetchTest(unittest.TestCase):
+    def requested(self, mode: str) -> str:
+        from offer_parser.firsay_feed import fetch_page
+
+        seen = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"items": [], "next": "", "more": false}'
+
+        def urlopen(request, timeout):
+            seen.append(request.full_url)
+            return Response()
+
+        with tempfile.TemporaryDirectory() as directory,                 patch.dict("os.environ", {"FIRSAY_FEED_MODE": mode}),                 patch("offer_parser.firsay_feed.urllib.request.urlopen", urlopen):
+            fetch_page(config(directory), "c1")
+        return seen[0]
+
+    def test_kol_mode_asks_for_kol_scope(self):
+        url = self.requested("kol")
+        self.assertIn("scope=kol", url)
+        self.assertIn("after=c1", url)
+
+    def test_legacy_mode_keeps_tagged_messages(self):
+        self.assertNotIn("scope=", self.requested("legacy"))
+
+
 class ToEventTest(unittest.TestCase):
     def test_public_link_keeps_username_and_message_id(self):
         event, title = to_event(item("https://t.me/web3jobs/42"))
