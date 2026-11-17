@@ -116,6 +116,9 @@ def fetch_page(config: FeedConfig, after: str) -> dict:
     parts = urllib.parse.urlsplit(config.url)
     query = dict(urllib.parse.parse_qsl(parts.query))
     query["limit"] = str(PAGE_LIMIT)
+    if os.getenv("FIRSAY_FEED_MODE", "kol").strip() == "kol":
+        # Every KOL/creator mention, Russian included, not only what Firsay tagged.
+        query.setdefault("scope", "kol")
     if after:
         query["after"] = after
     url = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
