@@ -51,7 +51,10 @@ SELLER = tuple(re.compile(p, re.IGNORECASE) for p in (
     r"\b(?:project owners|for projects|your project|your token|your coin|boost your|grow your|promote your)\b",
     r"\b\d+\s*(?:telegram|tg)\s*channels?\b",
     r"\breach (?:investors|thousands|millions)\b",
-    r"\b(?:promotion|marketing|shill|ama)\s+(?:package|service|offer)s?\b",
+    r"\b(?:promotion(?:al)?|marketing|shill|ama)\s+(?:package|service|offer)s?\b",
+    # Sellers address the reader's account; buyers ask for creator accounts.
+    r"\b(?:you|u)\s+(?:want|need)\s+to\s+(?:grow|boost|promote|increase)\b[^?!.]{0,100}\b(?:followers?|audience|reach|accounts?|pages?)\b",
+    r"\b(?:do you|are you looking to|want to)\s+(?:grow|boost|promote|increase)\b[^?!.]{0,100}\b(?:your|ur)\s+(?:x|twitter|telegram|social|account|page|audience|followers)\b",
     r"\b(?:available for|open for|accepting)\s+(?:promos?|paid|collabs?|partnerships?|deals?)\b",
     r"\bhire me\b|\bdm (?:me )?for (?:promo|promotion|rates|price)\b",
     r"\btarget:\s*\$",
