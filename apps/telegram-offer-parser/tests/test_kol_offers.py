@@ -27,6 +27,10 @@ OFFERS = [
 ]
 
 NOT_OFFERS = [
+    # False Saved Messages notification reported on 2026-11-19.
+    "You want to grow organic followers to your X account? DM for promotional service at an affordable price. Thank you.",
+    "Need AI creators? DM for promotional services at an affordable price.",
+    "You want to boost your Twitter account? DM me, affordable prices.",
     # service seller spam seen in the Firsay feed
     "Hi Project owners, are you here so you can see it? 20 Telegram Channels + 15 X Accounts  Target: $800K–$1M "
     "Market Cap  Reach investors across the USA, UK, Canada, UAE, Europe & more.",
@@ -140,6 +144,12 @@ class PipelineTest(unittest.IsolatedAsyncioTestCase):
         reasons = [r[0] for r in self.storage.connection.execute(
             "SELECT reason FROM audit_decisions WHERE stream='kol_offer' ORDER BY id")]
         self.assertEqual(reasons, ["notified", "radar_only"])
+
+    async def test_promotional_service_is_not_saved_or_queued(self):
+        text = NOT_OFFERS[0]
+        self.assertFalse(await process_kol(self.pipeline, self.event(8096), text, "Web 3 Bd's & Founders"))
+        self.assertEqual(self.outbox(), [])
+        self.assertEqual(self.storage.connection.execute("SELECT COUNT(*) FROM offers").fetchone()[0], 0)
 
     async def test_firsay_feed_takes_only_kol_offers(self):
         item = {"url": "https://t.me/kolhub/77", "text": OFFERS[4], "source": {"title": "KOL Hub"},
