@@ -14,7 +14,8 @@ from dataclasses import dataclass, field
 # Who is wanted.
 TALENT = (
     r"kols?|k\.o\.l|creators?|content creators?|influencers?|ambassadors?|shillers?|callers?|"
-    r"yappers?|posters?|promoters?|profiles?|accounts?|pages?|tweeters?|clippers?|"
+    r"yappers?|posters?|promoters?|tweeters?|clippers?|"
+    r"(?:x|twitter|social(?: media)?|creator|project)\s+(?:profiles?|accounts?|pages?)|"
     r"колов|колы|кол|креатор\w*|блогер\w*|инфлюенсер\w*|амбассадор\w*|автор\w*|аккаунт\w*"
 )
 TALENT_RE = re.compile(rf"\b(?:{TALENT})\b", re.IGNORECASE)
@@ -80,6 +81,9 @@ SCAM = tuple(re.compile(p, re.IGNORECASE) for p in (
 # Not a paid KOL gig: jobs, salary bait, affiliate/commission deals, token or "ambassador
 # terms" pay, giveaways, testers, scam warnings.
 NOT_A_GIG = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"\b(?:enterprise\s+)?account\s+(?:executives?|managers?)\b|"
+    r"\b(?:software|sales|backend|frontend)\s+engineers?\b|"
+    r"\b(?:job|career)\s+(?:opportunities|opportunity|listing|description)\b|\bваканси\w*\b",
     r"\bweekly salary\b|\bfunding to start\b|\bper hour\b|/hour\b|\bget paid \$?\d+\s*-?\s*\$?\d*\s*/\s*week\b",
     r"\bopen roles?\b|\bfull[- ]time\b|\bpart[- ]time\b|\b(?:ft|pt) (?:or|/) (?:pt|ft)\b|\bjob opening\b",
     r"\bbeta testers?\b|\bfeedback form\b|\btesters?\b",

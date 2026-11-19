@@ -27,6 +27,13 @@ OFFERS = [
 ]
 
 NOT_OFFERS = [
+    "Block, Inc. is hiring a remote Enterprise Account Executive. Block is looking for an Enterprise "
+    "Account Executive to own strategic enterprise accounts and generate pipeline while leading complex "
+    "multi-stakeholder deals and closing high-value Square deals in Australia. "
+    "Enterprise sales | Fintech | payments | stakeholder management | pipeline generation | deal-closing | "
+    "account strategy | SaaS | negotiation. Tired of applying? Have your own AI apply for you. "
+    "Try our new product: https://recruiters.rip and get 1 month for free using code onemonthfree",
+    "We are looking for strategic enterprise accounts. Send your budget via DM.",
     # False Saved Messages notification reported on 2026-11-19.
     "You want to grow organic followers to your X account? DM for promotional service at an affordable price. Thank you.",
     "Need AI creators? DM for promotional services at an affordable price.",
@@ -88,6 +95,9 @@ class DetectTest(unittest.TestCase):
         self.assertIn("AI", detect(OFFERS[4]).niches)
         self.assertIn("Финансы", detect(OFFERS[3]).niches)
 
+    def test_social_accounts_still_qualify(self):
+        self.assertTrue(detect("Looking for AI Twitter accounts for paid posts. Send your rates via DM.").is_offer)
+
     def test_message_format(self):
         text = format_offer(detect(OFFERS[2]), text=OFFERS[2], chat_title="Jobs", url="https://t.me/jobs/1")
         self.assertTrue(text.startswith("💸 ИЩУТ KOL · AI"))
@@ -146,7 +156,7 @@ class PipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reasons, ["notified", "radar_only"])
 
     async def test_promotional_service_is_not_saved_or_queued(self):
-        text = NOT_OFFERS[0]
+        text = next(text for text in NOT_OFFERS if text.startswith("You want to grow"))
         self.assertFalse(await process_kol(self.pipeline, self.event(8096), text, "Web 3 Bd's & Founders"))
         self.assertEqual(self.outbox(), [])
         self.assertEqual(self.storage.connection.execute("SELECT COUNT(*) FROM offers").fetchone()[0], 0)
