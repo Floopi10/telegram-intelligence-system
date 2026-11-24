@@ -16,6 +16,8 @@ from urllib.parse import urlparse
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+import x_search
+
 
 TOKEN = os.environ["X_COLLECTOR_TOKEN"]
 BIND = os.environ.get("X_COLLECTOR_BIND", "127.0.0.1")
@@ -105,6 +107,29 @@ def collect(url: str) -> dict[str, object]:
             context.close()
 
 
+def protect(route) -> None:
+    if any(operation in route.request.url for operation in BLOCKED):
+        route.abort()
+    else:
+        route.continue_()
+
+
+def search(query: str, limit: int = 30) -> dict[str, object]:
+    """Run one search in the same profile; the lock keeps one browser at a time."""
+    PROFILE.mkdir(parents=True, exist_ok=True)
+    with LOCK, sync_playwright() as playwright:
+        context = playwright.chromium.launch_persistent_context(
+            str(PROFILE), executable_path=CHROME, headless=True,
+            args=["--disable-gpu", "--disable-dev-shm-usage", "--disable-extensions", "--no-first-run"],
+        )
+        try:
+            page = context.pages[0]
+            page.route("**/*", protect)
+            return x_search.search_page(page, query, limit=limit)
+        finally:
+            context.close()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "XCollector/1.0"
 
@@ -127,7 +152,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not_found"})
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/collect":
+        path = urlparse(self.path).path
+        if path not in {"/collect", "/search"}:
             self.send_json(404, {"error": "not_found"})
             return
         if not self.authorized():
@@ -138,9 +164,14 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0 or length > 16_384:
                 raise ValueError("Invalid request size")
             payload = json.loads(self.rfile.read(length))
-            self.send_json(200, collect(str(payload.get("url", ""))))
+            if path == "/search":
+                self.send_json(200, search(str(payload.get("query", "")), int(payload.get("limit", 30))))
+            else:
+                self.send_json(200, collect(str(payload.get("url", ""))))
         except (ValueError, json.JSONDecodeError) as error:
             self.send_json(400, {"error": str(error)})
+        except x_search.LoginRequired as error:
+            self.send_json(503, {"error": str(error)})
         except PlaywrightTimeoutError:
             self.send_json(504, {"error": "X page timed out"})
         except Exception as error:

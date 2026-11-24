@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import urllib.parse
+import urllib.error
+import urllib.request
 
 from telethon.errors import FloodWaitError
 
@@ -17,11 +22,41 @@ def backoff_seconds(attempts: int) -> int:
     return min(30 * 2 ** min(attempts, 10), MAX_BACKOFF_SECONDS)
 
 
+BOT_PREFIX = "bot:"
+BOT_MAX_CHARS = 4096
+
+
+def send_via_bot(chat_id: str, body: str, token: str | None = None) -> None:
+    """Send through the Bot API: for a reader who is not the owner (target "bot:<chat_id>")."""
+    token = token or os.getenv("GIG_BOT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("GIG_BOT_TOKEN не задан")
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id, "text": body[:BOT_MAX_CHARS], "disable_web_page_preview": "true",
+    }).encode("utf-8")
+    request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=data)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # The URL holds the token: report the status only.
+        raise RuntimeError(f"Bot API HTTP {exc.code}") from None
+    if not payload.get("ok"):
+        raise RuntimeError(f"Bot API: {payload.get('description', 'error')}")
+
+
+async def send(client, target: str, body: str) -> None:
+    if target.startswith(BOT_PREFIX):
+        await asyncio.to_thread(send_via_bot, target[len(BOT_PREFIX):].strip(), body)
+    else:
+        await client.send_message(target, body, link_preview=False)
+
+
 async def drain_outbox(client, storage: Storage, *, limit: int = 20) -> int:
     sent = 0
     for row in storage.outbox_due(limit):
         try:
-            await client.send_message(row["target"], row["body"], link_preview=False)
+            await send(client, row["target"], row["body"])
         except FloodWaitError as exc:
             storage.outbox_defer(
                 row["id"], delay_seconds=exc.seconds + 1,

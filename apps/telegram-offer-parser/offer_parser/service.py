@@ -18,6 +18,8 @@ from .config import Settings
 from .exclusions import filter_excluded
 from .digest import daily_digest_loop, send_daily_digest_once
 from .firsay_feed import FeedConfig, firsay_feed_loop
+from .gig_pipeline import gig_target, process_gig
+from . import x_gig_search
 from .kol_pipeline import process_kol
 from .health_report import build_report, health_report_loop, report_hour
 from .outbox import outbox_loop
@@ -258,6 +260,7 @@ class MessagePipeline:
         kol = False
         if title is not None:
             kol = await self._kol(event, text, title)
+            await self._gig(event, text, title)
         if event.chat_id in self.selected_by_id and not kol and self._legacy_offers:
             # A KOL offer is already sent in its own format; do not send it twice.
             await self._guarded(self._handle_offer, self.storage, "offer", event, text)
@@ -275,6 +278,16 @@ class MessagePipeline:
             raise
         except Exception:
             LOGGER.exception("KOL-фильтр упал на сообщении %s/%s", event.chat_id, event.id)
+            return False
+
+    async def _gig(self, event, text: str, title: str) -> bool:
+        # Writer gigs for the owner's friend: its own target, never Saved Messages or Radar.
+        try:
+            return await process_gig(self, event, text, title)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.exception("Gig-фильтр упал на сообщении %s/%s", event.chat_id, event.id)
             return False
 
     async def _guarded(self, handler, storage: Storage, stream: str, event, text: str) -> None:
@@ -666,6 +679,14 @@ async def monitor(settings: Settings) -> None:
     feed_config = FeedConfig.from_env(settings.knowledge_database_path.parent) if knowledge_storage is not None else None
     if feed_config is not None:
         background.append(asyncio.create_task(firsay_feed_loop(pipeline, feed_config)))
+    x_gigs = x_gig_search.enabled()
+    if x_gigs:
+        try:
+            gig_collector = twitter_strength or XCollectorClient(settings.x_collector_env_file)
+            background.append(asyncio.create_task(x_gig_search.x_gig_search_loop(pipeline, gig_collector)))
+        except RuntimeError as exc:
+            x_gigs = False
+            LOGGER.warning("X gig search выключен: %s", exc)
     digest_enabled = settings.daily_digest_enabled and knowledge_storage is not None
     health_hour = report_hour()
     if knowledge_storage is not None and 0 <= health_hour <= 23:
@@ -739,6 +760,7 @@ async def monitor(settings: Settings) -> None:
         )
         + (f", digest={settings.daily_digest_hour_msk:02d}:00 MSK→{settings.daily_digest_target}" if digest_enabled else ", digest=off")
         + (", firsay_feed=on" if feed_config is not None else ", firsay_feed=off")
+        + f", gigs={'on' if gig_target() else 'off'}, x_gigs={'on' if x_gigs else 'off'}"
         + f", kol_chats={len(kol_by_id)}, legacy_offers={'on' if pipeline._legacy_offers else 'off'}"
         + (f", health={health_hour:02d}:00 MSK" if knowledge_storage is not None and 0 <= health_hour <= 23 else ", health=off")
         + ". Для остановки нажми Ctrl+C."
