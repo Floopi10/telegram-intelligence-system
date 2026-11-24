@@ -7,7 +7,7 @@ stream is off until that variable is set.
 Env (parser .env):
   GIG_NOTIFY_TARGET  "@username" / chat id (sent from the parser's Telegram account) or
                      "bot:<chat_id>" (sent by the bot whose token is GIG_BOT_TOKEN; the reader
-                     must press Start in that bot once)
+                     must press Start in that bot once); several readers go through a comma
   GIG_BOT_TOKEN      Bot API token, only for "bot:" targets
   GIG_NOTIFY_LIMIT   messages a day (MSK), default 30
   GIG_MAX_AGE_DAYS   older messages are skipped (search and feeds return old posts), default 14
@@ -77,10 +77,10 @@ async def process_gig(pipeline, event, text: str, title: str, *, url: str | None
         decision="accepted" if saved else "duplicate", reason=outcome, score=gig.score, text=text,
     )
     if notify:
-        storage.enqueue_message(
-            dedupe_key=f"gig:{event.chat_id}:{event.id}", target=target,
-            body=format_gig(gig, text=text, source=title, url=url, author=author),
-        )
+        body = format_gig(gig, text=text, source=title, url=url, author=author)
+        # Several readers: "bot:1,bot:2". The daily limit counts gigs, not copies.
+        for reader in dict.fromkeys(part.strip() for part in target.split(",") if part.strip()):
+            storage.enqueue_message(dedupe_key=f"gig:{event.chat_id}:{event.id}:{reader}", target=reader, body=body)
         LOGGER.info("Gig отправлен: %s/%s", event.chat_id, event.id)
     return True
 

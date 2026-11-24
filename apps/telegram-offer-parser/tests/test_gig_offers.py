@@ -131,6 +131,12 @@ class PipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.storage.connection.execute("SELECT item_kind FROM offers").fetchone()[0], "gig")
         self.assertEqual(notified_today(self.storage), 1)
 
+    async def test_several_readers_get_a_copy_each(self):
+        with patch.dict(os.environ, {"GIG_NOTIFY_TARGET": "bot:777, bot:888,bot:777"}):
+            await process_gig(self.pipeline, self.event(1), GIGS[6], "CT Jobs")
+        self.assertEqual([row[0] for row in self.outbox()], ["bot:777", "bot:888"])
+        self.assertEqual(notified_today(self.storage), 1)
+
     async def test_off_without_a_target(self):
         with patch.dict(os.environ, {"GIG_NOTIFY_TARGET": ""}):
             self.assertFalse(await process_gig(self.pipeline, self.event(1), GIGS[6], "CT Jobs"))
