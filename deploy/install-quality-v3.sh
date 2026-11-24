@@ -27,6 +27,9 @@ FILES=(
   offer_parser/health_report.py
   offer_parser/kol_offers.py
   offer_parser/kol_pipeline.py
+  offer_parser/gig_offers.py
+  offer_parser/gig_pipeline.py
+  offer_parser/x_gig_search.py
   tests/test_system_hardening.py
   tests/test_twitter_radar_v27.py
   tests/test_twitter_evidence.py
@@ -40,6 +43,7 @@ FILES=(
   tests/test_health_report.py
   tests/test_kol_offers.py
   tests/test_kol_chats.py
+  tests/test_gig_offers.py
 )
 
 [[ $EUID -eq 0 ]] || exec sudo --preserve-env=PROJECT_DIR,SERVICE_NAME,SERVICE_USER "$0" "$@"

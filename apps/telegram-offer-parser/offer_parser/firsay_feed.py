@@ -118,7 +118,9 @@ def fetch_page(config: FeedConfig, after: str) -> dict:
     query["limit"] = str(PAGE_LIMIT)
     if os.getenv("FIRSAY_FEED_MODE", "kol").strip() == "kol":
         # Every KOL/creator mention, Russian included, not only what Firsay tagged.
-        query.setdefault("scope", "kol")
+        # FIRSAY_FEED_SCOPE lets the feed ask for a wider scope once Firsay serves one
+        # (writer gigs need their own words; an unknown scope falls back to tagged items).
+        query.setdefault("scope", os.getenv("FIRSAY_FEED_SCOPE", "kol").strip() or "kol")
     if after:
         query["after"] = after
     url = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
@@ -202,12 +204,17 @@ async def handle_offer(pipeline, event, title: str, result, notify_limit: int) -
 async def handle_item(pipeline, event, title: str, notify_limit: int) -> None:
     # Only KOL offers are taken from Firsay: its old offer and knowledge routes brought
     # service sellers and ate the knowledge limit (2026-11-08).
+    from .gig_pipeline import process_gig
     from .kol_pipeline import process_kol
 
     if os.getenv("FIRSAY_FEED_MODE", "kol").strip() == "kol":
         await pipeline._guarded(
             lambda ev, text: process_kol(pipeline, ev, text, title),
             pipeline.knowledge_storage, "kol_offer", event, event.raw_text,
+        )
+        await pipeline._guarded(
+            lambda ev, text: process_gig(pipeline, ev, text, title),
+            pipeline.knowledge_storage, "gig", event, event.raw_text,
         )
         return
     result = pipeline.matcher.evaluate(event.raw_text)
